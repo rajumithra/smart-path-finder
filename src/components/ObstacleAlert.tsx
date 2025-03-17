@@ -51,6 +51,15 @@ const ObstacleAlert: React.FC<ObstacleAlertProps> = ({ isVisible, onClose }) => 
                 An obstacle has been detected on your current path. Rerouting to find a safer alternative route.
               </p>
               
+              <div className="flex flex-col space-y-2 mt-3">
+                <div className="flex items-center text-xs text-amber-600 bg-amber-50 p-1.5 rounded">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Calculating the nearest alternative path to reach your destination</span>
+                </div>
+              </div>
+              
               <div className="flex items-center justify-between mt-3">
                 <div className="flex items-center text-xs text-gray-500">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">

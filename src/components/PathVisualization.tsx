@@ -1,7 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { findPath } from '../utils/pathFinding';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { findPath, findAlternativeRoute, Route, PathFindingResponse } from '../utils/pathFinding';
 
 interface PathVisualizationProps {
   source: string;
@@ -23,29 +25,34 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const [pathProgress, setPathProgress] = useState(0);
   const [isMoving, setIsMoving] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [routes, setRoutes] = useState<any[]>([]);
-  const [markerPosition, setMarkerPosition] = useState<{lat: number, lng: number} | null>(null);
+  const [routeData, setRouteData] = useState<PathFindingResponse | null>(null);
+  const [currentPosition, setCurrentPosition] = useState<L.LatLngExpression | null>(null);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
   const animationRef = useRef<number | null>(null);
-  const pathLayerRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
+  const routeLayersRef = useRef<L.Layer[]>([]);
+  const markerRef = useRef<L.Marker | null>(null);
+  const sourceMarkerRef = useRef<L.Marker | null>(null);
+  const destMarkerRef = useRef<L.Marker | null>(null);
   
-  // Load paths data
+  // Load path data when source and destination are set
   useEffect(() => {
+    if (!source || !destination) return;
+    
     const loadPathData = async () => {
       setIsCalculating(true);
       try {
         const pathData = await findPath(source, destination);
-        setRoutes(pathData.routes);
+        setRouteData(pathData);
         
-        // Set initial marker position to start location
-        if (pathData.routes.length > 0 && pathData.sourceLocation) {
-          setMarkerPosition({
-            lat: pathData.sourceLocation.latitude,
-            lng: pathData.sourceLocation.longitude
-          });
+        // Set initial position to start location
+        if (pathData.routes.length > 0) {
+          const startPoint: L.LatLngExpression = [
+            pathData.sourceLocation.latitude,
+            pathData.sourceLocation.longitude
+          ];
+          setCurrentPosition(startPoint);
         }
       } catch (error) {
         console.error("Error loading path data:", error);
@@ -60,152 +67,146 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     loadPathData();
   }, [source, destination]);
   
-  // Initialize map display
+  // Initialize Leaflet map
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!mapContainerRef.current || mapRef.current) return;
     
-    // Create a simple map using HTML/CSS for visualization
-    const mapContainer = mapContainerRef.current;
-    mapContainer.innerHTML = '';
+    // Create Leaflet map
+    const map = L.map(mapContainerRef.current, {
+      center: [40.7128, -74.0060], // Default to New York
+      zoom: 13,
+      layers: [
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        })
+      ]
+    });
     
-    const mapElement = document.createElement('div');
-    mapElement.className = 'w-full h-full bg-blue-50';
-    mapContainer.appendChild(mapElement);
-    
-    // Create map grid
-    const gridContainer = document.createElement('div');
-    gridContainer.className = 'absolute inset-0 grid grid-cols-12 grid-rows-12';
-    
-    for (let i = 0; i < 144; i++) {
-      const cell = document.createElement('div');
-      cell.className = 'border border-blue-100/30';
-      gridContainer.appendChild(cell);
-    }
-    
-    mapContainer.appendChild(gridContainer);
-    mapRef.current = mapElement;
+    mapRef.current = map;
     setMapLoaded(true);
     
+    // Clean up on unmount
     return () => {
-      mapContainer.innerHTML = '';
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, []);
   
-  // Handle path rendering and animation
+  // Update map when route data changes
   useEffect(() => {
-    if (!mapLoaded || routes.length === 0 || !isMoving || isCalculating) return;
+    if (!mapLoaded || !mapRef.current || !routeData) return;
     
-    // Clear previous path layer
-    if (pathLayerRef.current) {
-      mapContainerRef.current?.removeChild(pathLayerRef.current);
-      pathLayerRef.current = null;
-    }
+    const map = mapRef.current;
     
-    // Create SVG for path visualization
-    const svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svgElement.setAttribute('class', 'absolute inset-0 w-full h-full pointer-events-none');
-    svgElement.setAttribute('viewBox', '0 0 100 100');
-    svgElement.setAttribute('preserveAspectRatio', 'none');
+    // Clear previous routes
+    routeLayersRef.current.forEach(layer => {
+      map.removeLayer(layer);
+    });
+    routeLayersRef.current = [];
     
-    // Draw all routes with current one highlighted
-    routes.forEach((route, index) => {
-      const isCurrentRoute = index === currentPathIndex;
-      
-      if (route.segments && route.segments.length > 0) {
-        // Create path element
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        
-        // Generate path data from segments
-        let pathData = '';
-        const segments = route.segments;
-        
-        if (segments[0].startLocation) {
-          // Start point
-          const startX = normalizeCoordinate(segments[0].startLocation.longitude);
-          const startY = normalizeCoordinate(segments[0].startLocation.latitude);
-          pathData = `M ${startX} ${startY}`;
-          
-          // Add all segments
-          segments.forEach(segment => {
-            const endX = normalizeCoordinate(segment.endLocation.longitude);
-            const endY = normalizeCoordinate(segment.endLocation.latitude);
-            pathData += ` L ${endX} ${endY}`;
-          });
-        }
-        
-        path.setAttribute('d', pathData);
-        path.setAttribute('class', `path ${isCurrentRoute ? 'stroke-primary path-animated' : 'stroke-gray-300'}`);
-        path.setAttribute('stroke-width', isCurrentRoute ? '0.8' : '0.4');
-        path.setAttribute('fill', 'none');
-        
-        if (isCurrentRoute) {
-          path.classList.add('stroke-dasharray-5-5');
-        }
-        
-        svgElement.appendChild(path);
-      }
+    // Create markers for source and destination
+    if (sourceMarkerRef.current) map.removeLayer(sourceMarkerRef.current);
+    if (destMarkerRef.current) map.removeLayer(destMarkerRef.current);
+    
+    const sourcePoint: L.LatLngExpression = [
+      routeData.sourceLocation.latitude,
+      routeData.sourceLocation.longitude
+    ];
+    
+    const destPoint: L.LatLngExpression = [
+      routeData.destinationLocation.latitude,
+      routeData.destinationLocation.longitude
+    ];
+    
+    // Custom icons for source and destination
+    const sourceIcon = L.divIcon({
+      html: `<div class="flex items-center justify-center w-6 h-6 bg-green-500 text-white rounded-full shadow-lg border-2 border-white">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </div>`,
+      className: '',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
     });
     
-    // Add start and end markers
-    if (routes[0] && routes[0].segments && routes[0].segments.length > 0) {
-      const startSegment = routes[0].segments[0];
-      const endSegment = routes[0].segments[routes[0].segments.length - 1];
+    const destIcon = L.divIcon({
+      html: `<div class="flex items-center justify-center w-6 h-6 bg-red-500 text-white rounded-full shadow-lg border-2 border-white">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>`,
+      className: '',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+    
+    sourceMarkerRef.current = L.marker(sourcePoint, { icon: sourceIcon })
+      .addTo(map)
+      .bindPopup(`<b>Start:</b> ${source}`);
+    
+    destMarkerRef.current = L.marker(destPoint, { icon: destIcon })
+      .addTo(map)
+      .bindPopup(`<b>Destination:</b> ${destination}`);
+    
+    // Draw all routes
+    routeData.routes.forEach((route, index) => {
+      const isCurrentRoute = index === currentPathIndex;
       
-      // Start marker
-      const startCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      startCircle.setAttribute('cx', normalizeCoordinate(startSegment.startLocation.longitude).toString());
-      startCircle.setAttribute('cy', normalizeCoordinate(startSegment.startLocation.latitude).toString());
-      startCircle.setAttribute('r', '1.5');
-      startCircle.setAttribute('fill', 'green');
-      svgElement.appendChild(startCircle);
+      // Create polyline for route
+      const polyline = L.polyline(route.geometry, {
+        color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
+        weight: isCurrentRoute ? 5 : 3,
+        opacity: isCurrentRoute ? 1 : 0.6,
+        dashArray: isCurrentRoute ? '' : '5, 5',
+      }).addTo(map);
       
-      // Start label
-      const startText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      startText.setAttribute('x', normalizeCoordinate(startSegment.startLocation.longitude).toString());
-      startText.setAttribute('y', (normalizeCoordinate(startSegment.startLocation.latitude) - 2).toString());
-      startText.setAttribute('font-size', '2');
-      startText.setAttribute('text-anchor', 'middle');
-      startText.setAttribute('fill', '#333');
-      startText.textContent = 'Start';
-      svgElement.appendChild(startText);
+      routeLayersRef.current.push(polyline);
+    });
+    
+    // Create marker for current position if not already created
+    if (currentPosition) {
+      if (markerRef.current) map.removeLayer(markerRef.current);
       
-      // End marker
-      const endCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      endCircle.setAttribute('cx', normalizeCoordinate(endSegment.endLocation.longitude).toString());
-      endCircle.setAttribute('cy', normalizeCoordinate(endSegment.endLocation.latitude).toString());
-      endCircle.setAttribute('r', '1.5');
-      endCircle.setAttribute('fill', 'red');
-      svgElement.appendChild(endCircle);
+      const positionIcon = L.divIcon({
+        html: `<div class="animate-pulse flex items-center justify-center w-5 h-5 bg-blue-500 text-white rounded-full border-2 border-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>`,
+        className: '',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
       
-      // End label
-      const endText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      endText.setAttribute('x', normalizeCoordinate(endSegment.endLocation.longitude).toString());
-      endText.setAttribute('y', (normalizeCoordinate(endSegment.endLocation.latitude) - 2).toString());
-      endText.setAttribute('font-size', '2');
-      endText.setAttribute('text-anchor', 'middle');
-      endText.setAttribute('fill', '#333');
-      endText.textContent = 'End';
-      svgElement.appendChild(endText);
+      markerRef.current = L.marker(currentPosition, { icon: positionIcon })
+        .addTo(map)
+        .bindPopup('Current Position');
     }
     
-    mapContainerRef.current?.appendChild(svgElement);
-    pathLayerRef.current = svgElement;
+    // Fit map to show all routes
+    const bounds = L.latLngBounds([sourcePoint, destPoint]);
+    map.fitBounds(bounds, { padding: [50, 50] });
     
-    // Set up animation for the current path
+  }, [mapLoaded, routeData, currentPathIndex, source, destination]);
+  
+  // Handle animation and position updates
+  useEffect(() => {
+    if (!mapLoaded || !routeData || routeData.routes.length === 0 || 
+        !isMoving || isCalculating || !mapRef.current || !markerRef.current) {
+      return;
+    }
+    
+    // Get current route
+    const currentRoute = routeData.routes[currentPathIndex];
+    const routePath = currentRoute.geometry;
+    
+    // Set up animation
     let startTime: number | null = null;
-    const duration = 10000; // 10 seconds for full path
-    
-    const currentRoute = routes[currentPathIndex];
-    
-    // Create or update marker
-    if (!markerRef.current && markerPosition) {
-      const markerElement = document.createElement('div');
-      markerElement.className = 'absolute w-3 h-3 bg-blue-500 rounded-full shadow-md transform -translate-x-1/2 -translate-y-1/2 animate-pulse z-10';
-      markerElement.style.left = `${normalizeCoordinate(markerPosition.lng) * 100}%`;
-      markerElement.style.top = `${normalizeCoordinate(markerPosition.lat) * 100}%`;
-      mapContainerRef.current?.appendChild(markerElement);
-      markerRef.current = markerElement;
-    }
+    const duration = 15000; // 15 seconds for full path traversal
     
     const animate = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
@@ -214,19 +215,16 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       
       setPathProgress(progress);
       
-      // Calculate current position based on progress and route segments
-      if (currentRoute && currentRoute.segments && currentRoute.segments.length > 0) {
-        const currentPosition = calculatePositionAlongPath(currentRoute.segments, progress);
+      // Calculate current position along the path
+      if (routePath.length > 1 && markerRef.current && mapRef.current) {
+        const currentPos = getPointAlongPath(routePath, progress);
         
-        if (currentPosition && markerRef.current) {
-          const { lat, lng } = currentPosition;
-          
-          // Update marker position
-          markerRef.current.style.left = `${normalizeCoordinate(lng) * 100}%`;
-          markerRef.current.style.top = `${normalizeCoordinate(lat) * 100}%`;
-          
-          setMarkerPosition(currentPosition);
-        }
+        // Update marker position
+        markerRef.current.setLatLng(currentPos);
+        setCurrentPosition(currentPos);
+        
+        // Optionally pan map to follow
+        mapRef.current.panTo(currentPos);
       }
       
       if (progress < 1) {
@@ -244,58 +242,113 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [mapLoaded, routes, currentPathIndex, isMoving, isCalculating, onPathComplete]);
+  }, [mapLoaded, routeData, currentPathIndex, isMoving, isCalculating, onPathComplete]);
   
   // Handle obstacle detection
   useEffect(() => {
-    if (obstacleDetected && routes.length > 0) {
+    if (!obstacleDetected || !routeData || !currentPosition) return;
+    
+    const handleObstacle = async () => {
       setIsCalculating(true);
       
-      setTimeout(() => {
-        // Choose a different route
-        const newPathIndex = (currentPathIndex + 1) % routes.length;
-        setCurrentPathIndex(newPathIndex);
+      try {
+        // Stop current animation
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
         
+        // Get current route
+        const currentRoute = routeData.routes[currentPathIndex];
+        
+        // Try to get an alternative route from OSRM
+        if (routeData.routes.length > 1) {
+          // Switch to next alternative route
+          const newPathIndex = (currentPathIndex + 1) % routeData.routes.length;
+          setCurrentPathIndex(newPathIndex);
+        } else {
+          // If no alternative routes from OSRM, calculate a new one
+          const currentCoordinates = {
+            latitude: (currentPosition as L.LatLng).lat,
+            longitude: (currentPosition as L.LatLng).lng
+          };
+          
+          const alternativeRoute = await findAlternativeRoute(
+            currentRoute,
+            currentCoordinates,
+            routeData.destinationLocation
+          );
+          
+          // Update route data with new alternative
+          setRouteData(prev => {
+            if (!prev) return null;
+            
+            // Add the new route as the current one
+            const updatedRoutes = [...prev.routes];
+            updatedRoutes[currentPathIndex] = alternativeRoute;
+            
+            return {
+              ...prev,
+              routes: updatedRoutes
+            };
+          });
+        }
+      } catch (error) {
+        console.error("Error handling obstacle:", error);
+      } finally {
         setIsCalculating(false);
         resetObstacleDetected();
-      }, 1000);
-    }
-  }, [obstacleDetected, routes, currentPathIndex, resetObstacleDetected]);
-  
-  // Helper function to normalize coordinates for display
-  const normalizeCoordinate = (coord: number): number => {
-    // Simple normalization for demo - in a real app would use proper map projection
-    return Math.abs((coord + 180) % 360) / 360;
-  };
-  
-  // Helper function to calculate position along a path based on progress
-  const calculatePositionAlongPath = (segments: any[], progress: number): {lat: number, lng: number} | null => {
-    if (!segments || segments.length === 0) return null;
-    
-    const totalSegments = segments.length;
-    const progressPerSegment = 1 / totalSegments;
-    
-    // Determine which segment we're on
-    const currentSegmentIndex = Math.min(
-      Math.floor(progress / progressPerSegment),
-      totalSegments - 1
-    );
-    
-    const currentSegment = segments[currentSegmentIndex];
-    
-    // Calculate progress within this segment
-    const segmentProgress = (progress - (currentSegmentIndex * progressPerSegment)) / progressPerSegment;
-    
-    // Interpolate position
-    const startLat = currentSegment.startLocation.latitude;
-    const startLng = currentSegment.startLocation.longitude;
-    const endLat = currentSegment.endLocation.latitude;
-    const endLng = currentSegment.endLocation.longitude;
-    
-    return {
-      lat: startLat + (endLat - startLat) * segmentProgress,
-      lng: startLng + (endLng - startLng) * segmentProgress
+        
+        // Resume animation after a short delay
+        setTimeout(() => {
+          setIsMoving(true);
+        }, 500);
+      }
     };
+    
+    handleObstacle();
+  }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected]);
+  
+  // Helper function to get a point along a path based on progress
+  const getPointAlongPath = (path: L.LatLngExpression[], progress: number) => {
+    if (path.length <= 1) return path[0];
+    
+    // Get the total path length
+    let totalLength = 0;
+    const segmentLengths: number[] = [];
+    
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = L.latLng(path[i]);
+      const p2 = L.latLng(path[i + 1]);
+      const length = p1.distanceTo(p2);
+      segmentLengths.push(length);
+      totalLength += length;
+    }
+    
+    // Find the point based on progress
+    const targetDistance = progress * totalLength;
+    let distanceSoFar = 0;
+    
+    for (let i = 0; i < path.length - 1; i++) {
+      const segmentLength = segmentLengths[i];
+      
+      if (distanceSoFar + segmentLength >= targetDistance) {
+        // We found the segment
+        const segmentProgress = (targetDistance - distanceSoFar) / segmentLength;
+        const p1 = L.latLng(path[i]);
+        const p2 = L.latLng(path[i + 1]);
+        
+        // Linear interpolation
+        return L.latLng(
+          p1.lat + (p2.lat - p1.lat) * segmentProgress,
+          p1.lng + (p2.lng - p1.lng) * segmentProgress
+        );
+      }
+      
+      distanceSoFar += segmentLength;
+    }
+    
+    // If we get here, return the last point
+    return path[path.length - 1];
   };
   
   return (
@@ -312,7 +365,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       )}
       
       <div ref={mapContainerRef} className="w-full h-full relative">
-        {/* Map will be rendered here */}
+        {/* Leaflet map will be rendered here */}
       </div>
       
       <div className="absolute bottom-4 right-4 bg-white/80 rounded-lg p-3 text-xs shadow-sm">
@@ -325,10 +378,28 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           <span>Destination: {destination}</span>
         </div>
         <div className="flex items-center">
-          <div className="w-3 h-3 rounded-full bg-blue-500 mr-2"></div>
+          <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse mr-2"></div>
           <span>Current Position</span>
         </div>
       </div>
+      
+      {routeData && (
+        <div className="absolute top-4 left-4 bg-white/80 rounded-lg p-3 text-xs shadow-sm">
+          <div className="text-gray-700 font-medium mb-1">Route Information</div>
+          <div className="flex items-center mb-1">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{Math.round(routeData.routes[currentPathIndex].duration / 60)} minutes</span>
+          </div>
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+            <span>{(routeData.routes[currentPathIndex].distance / 1000).toFixed(1)} km</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

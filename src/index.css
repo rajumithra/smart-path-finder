@@ -131,4 +131,44 @@
   .subtle-shadow {
     @apply shadow-[0_8px_30px_rgba(0,0,0,0.05)];
   }
+
+  /* Leaflet custom styles */
+  .leaflet-container {
+    @apply h-full w-full rounded-lg overflow-hidden;
+  }
+
+  .leaflet-control-attribution {
+    @apply text-xs bg-white/60 backdrop-blur-sm;
+  }
+
+  .leaflet-control-zoom {
+    @apply border border-gray-200 rounded-md overflow-hidden bg-white/80 backdrop-blur-sm;
+  }
+
+  .leaflet-control-zoom a {
+    @apply border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors;
+  }
+
+  .leaflet-popup-content-wrapper {
+    @apply rounded-lg shadow-lg border border-gray-100 overflow-hidden bg-white/90 backdrop-blur-md;
+  }
+
+  .leaflet-popup-tip {
+    @apply bg-white/90;
+  }
+}
+
+@keyframes scan {
+  0% {
+    top: 0;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+@keyframes path-dash {
+  to {
+    stroke-dashoffset: 10;
+  }
 }
