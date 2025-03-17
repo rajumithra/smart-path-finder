@@ -113,7 +113,7 @@
   }
 
   .path {
-    @apply stroke-primary stroke-2 fill-none stroke-dasharray-[5,5];
+    @apply stroke-primary stroke-2 fill-none stroke-dasharray-5-5;
   }
 
   .path-animated {

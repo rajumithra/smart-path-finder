@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
@@ -36,45 +35,34 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const [visualWidth, setVisualWidth] = useState(600);
   const [visualHeight, setVisualHeight] = useState(400);
   
-  // Functions to convert between coordinates and visual points
   const coordinateToPoint = (coord: Coordinate): PathPoint => {
-    // This would normally use proper map projection
-    // For demo, we're just doing a simple mapping to the visual space
     const x = (coord.lon + 180) * (visualWidth / 360);
     const y = (90 - coord.lat) * (visualHeight / 180);
     return { x, y };
   };
   
-  // Generate random paths for demo purposes
   const generatePaths = (src: string, dest: string): PathPoint[][] => {
-    // In a real app, we would use the OSRM API here
-    // For demo, we'll create some simulated paths
-    
-    // Convert source and destination to simulated coordinates
     const sourceCoord: Coordinate = {
-      lat: 40.7128, // New York
+      lat: 40.7128,
       lon: -74.006
     };
     
     const destCoord: Coordinate = {
-      lat: 34.0522, // Los Angeles 
+      lat: 34.0522,
       lon: -118.2437
     };
     
     const sourcePoint = coordinateToPoint(sourceCoord);
     const destPoint = coordinateToPoint(destCoord);
     
-    // Create multiple path options with different waypoints
     const pathOptions: PathPoint[][] = [];
     
-    // Direct path
     const directPath = [
       sourcePoint,
       destPoint
     ];
     pathOptions.push(directPath);
     
-    // Path with waypoints
     const waypoint1: PathPoint = {
       x: sourcePoint.x + (destPoint.x - sourcePoint.x) * 0.3,
       y: sourcePoint.y - 40
@@ -93,7 +81,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     ];
     pathOptions.push(waypointPath);
     
-    // Another alternative path
     const altWaypoint1: PathPoint = {
       x: sourcePoint.x + (destPoint.x - sourcePoint.x) * 0.4,
       y: sourcePoint.y + 60
@@ -115,44 +102,35 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     return pathOptions;
   };
   
-  // Calculate initial paths
   useEffect(() => {
     setIsCalculating(true);
     
-    // Simulate API delay
     setTimeout(() => {
       const generatedPaths = generatePaths(source, destination);
       setPaths(generatedPaths);
       
-      // Set initial marker position to the start of path
       if (generatedPaths.length > 0 && generatedPaths[0].length > 0) {
         setMarkerPosition(generatedPaths[0][0]);
       }
       
       setIsCalculating(false);
       
-      // Begin moving along the path
       setTimeout(() => {
         setIsMoving(true);
       }, 1000);
     }, 1500);
   }, [source, destination]);
   
-  // Handle obstacle detection
   useEffect(() => {
     if (obstacleDetected && paths.length > 0) {
       setIsCalculating(true);
       
-      // Save current progress
       const currentProgress = pathProgress;
       
-      // Simulate recalculation of path
       setTimeout(() => {
-        // Choose a different path
         const newPathIndex = (currentPathIndex + 1) % paths.length;
         setCurrentPathIndex(newPathIndex);
         
-        // Place marker at appropriate position along the new path
         const newPath = paths[newPathIndex];
         const newMarkerPosition = calculatePositionAlongPath(newPath, currentProgress);
         setMarkerPosition(newMarkerPosition);
@@ -163,7 +141,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     }
   }, [obstacleDetected, paths, currentPathIndex, pathProgress, resetObstacleDetected]);
   
-  // Animate movement along path
   useEffect(() => {
     if (!isMoving || isCalculating || paths.length === 0) return;
     
@@ -172,7 +149,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     
     let animationFrameId: number;
     let startTime: number | null = null;
-    const duration = 10000; // 10 seconds to travel the path
+    const duration = 10000;
     
     const animateAlongPath = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
@@ -187,7 +164,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       if (progress < 1) {
         animationFrameId = requestAnimationFrame(animateAlongPath);
       } else {
-        // Path completed
         onPathComplete();
       }
     };
@@ -199,12 +175,10 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
   }, [isMoving, isCalculating, paths, currentPathIndex, onPathComplete]);
   
-  // Helper function to calculate position along a multi-point path
   const calculatePositionAlongPath = (path: PathPoint[], progress: number): PathPoint => {
     if (path.length === 0) return { x: 0, y: 0 };
     if (path.length === 1) return path[0];
     
-    // For multiple segments, determine which segment we're on
     const totalSegments = path.length - 1;
     const progressPerSegment = 1 / totalSegments;
     
@@ -216,17 +190,14 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     const segmentStart = path[currentSegmentIndex];
     const segmentEnd = path[currentSegmentIndex + 1];
     
-    // Calculate progress within this segment
     const segmentProgress = (progress - (currentSegmentIndex * progressPerSegment)) / progressPerSegment;
     
-    // Interpolate position
     return {
       x: segmentStart.x + (segmentEnd.x - segmentStart.x) * segmentProgress,
       y: segmentStart.y + (segmentEnd.y - segmentStart.y) * segmentProgress
     };
   };
   
-  // Create SVG path string from points
   const createPathString = (points: PathPoint[]): string => {
     if (points.length === 0) return '';
     
@@ -253,13 +224,11 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       )}
       
       <svg width={visualWidth} height={visualHeight} className="w-full h-full">
-        {/* Background grid */}
         <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
           <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0, 0, 0, 0.05)" strokeWidth="0.5" />
         </pattern>
         <rect width="100%" height="100%" fill="url(#grid)" />
         
-        {/* Render all paths */}
         {paths.map((path, index) => (
           <path
             key={index}
@@ -269,12 +238,10 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
             } ${
               index === currentPathIndex ? 'path-animated' : ''
             }`}
-            strokeDasharray="5,5"
             strokeWidth={index === currentPathIndex ? 3 : 1}
           />
         ))}
         
-        {/* Source and destination markers */}
         {paths.length > 0 && paths[0].length > 0 && (
           <>
             <circle
@@ -309,7 +276,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           </>
         )}
         
-        {/* Moving marker */}
         {markerPosition && (
           <circle
             cx={markerPosition.x}
@@ -320,7 +286,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         )}
       </svg>
       
-      {/* Legend */}
       <div className="absolute bottom-4 right-4 bg-white/80 rounded-lg p-3 text-xs shadow-sm">
         <div className="flex items-center mb-1">
           <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
