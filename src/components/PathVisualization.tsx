@@ -3,7 +3,9 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import { findPath, findAlternativeRoute, Route, PathFindingResponse } from '../utils/pathFinding';
+import { toast } from '@/components/ui/use-toast';
 
 interface PathVisualizationProps {
   source: string;
@@ -27,6 +29,8 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const [mapLoaded, setMapLoaded] = useState(false);
   const [routeData, setRouteData] = useState<PathFindingResponse | null>(null);
   const [currentPosition, setCurrentPosition] = useState<L.LatLngExpression | null>(null);
+  const [lastObstacleTime, setLastObstacleTime] = useState(0);
+  const [isRerouting, setIsRerouting] = useState(false);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -35,6 +39,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const markerRef = useRef<L.Marker | null>(null);
   const sourceMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
+  const routingControlRef = useRef<L.Routing.Control | null>(null);
   
   // Load path data when source and destination are set
   useEffect(() => {
@@ -56,6 +61,11 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         }
       } catch (error) {
         console.error("Error loading path data:", error);
+        toast({
+          title: "Navigation Error",
+          description: "Failed to calculate route. Please try again.",
+          variant: "destructive"
+        });
       } finally {
         setIsCalculating(false);
         setTimeout(() => {
@@ -100,15 +110,19 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     
     const map = mapRef.current;
     
-    // Clear previous routes
+    // Clear previous routes and markers
     routeLayersRef.current.forEach(layer => {
       map.removeLayer(layer);
     });
     routeLayersRef.current = [];
     
-    // Create markers for source and destination
     if (sourceMarkerRef.current) map.removeLayer(sourceMarkerRef.current);
     if (destMarkerRef.current) map.removeLayer(destMarkerRef.current);
+    
+    if (routingControlRef.current) {
+      map.removeControl(routingControlRef.current);
+      routingControlRef.current = null;
+    }
     
     const sourcePoint: L.LatLngExpression = [
       routeData.sourceLocation.latitude,
@@ -152,20 +166,64 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       .addTo(map)
       .bindPopup(`<b>Destination:</b> ${destination}`);
     
-    // Draw all routes
-    routeData.routes.forEach((route, index) => {
-      const isCurrentRoute = index === currentPathIndex;
-      
-      // Create polyline for route
-      const polyline = L.polyline(route.geometry, {
-        color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
-        weight: isCurrentRoute ? 5 : 3,
-        opacity: isCurrentRoute ? 1 : 0.6,
-        dashArray: isCurrentRoute ? '' : '5, 5',
+    // Add routing control
+    try {
+      // @ts-ignore - Leaflet Routing Machine types are not fully compatible
+      routingControlRef.current = L.Routing.control({
+        waypoints: [
+          L.latLng(sourcePoint[0], sourcePoint[1]),
+          L.latLng(destPoint[0], destPoint[1])
+        ],
+        routeWhileDragging: false,
+        showAlternatives: true,
+        fitSelectedRoutes: true,
+        lineOptions: {
+          styles: [
+            { color: '#3b82f6', opacity: 0.8, weight: 5 },
+            { color: 'white', opacity: 0.3, weight: 10 }
+          ]
+        },
+        altLineOptions: {
+          styles: [
+            { color: '#9ca3af', opacity: 0.6, weight: 3, dashArray: '5,8' },
+            { color: 'white', opacity: 0.2, weight: 8 }
+          ]
+        },
+        createMarker: function() { return null; } // Don't create default markers
       }).addTo(map);
       
-      routeLayersRef.current.push(polyline);
-    });
+      // Manually draw all routes from our data as well
+      routeData.routes.forEach((route, index) => {
+        const isCurrentRoute = index === currentPathIndex;
+        
+        // Create polyline for route
+        const polyline = L.polyline(route.geometry, {
+          color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
+          weight: isCurrentRoute ? 5 : 3,
+          opacity: isCurrentRoute ? 1 : 0.6,
+          dashArray: isCurrentRoute ? '' : '5, 5',
+        }).addTo(map);
+        
+        routeLayersRef.current.push(polyline);
+      });
+    } catch (error) {
+      console.error("Error creating routing control:", error);
+      
+      // Fallback to just drawing the routes if routing control fails
+      routeData.routes.forEach((route, index) => {
+        const isCurrentRoute = index === currentPathIndex;
+        
+        // Create polyline for route
+        const polyline = L.polyline(route.geometry, {
+          color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
+          weight: isCurrentRoute ? 5 : 3,
+          opacity: isCurrentRoute ? 1 : 0.6,
+          dashArray: isCurrentRoute ? '' : '5, 5',
+        }).addTo(map);
+        
+        routeLayersRef.current.push(polyline);
+      });
+    }
     
     // Create marker for current position if not already created
     if (currentPosition) {
@@ -244,12 +302,21 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
   }, [mapLoaded, routeData, currentPathIndex, isMoving, isCalculating, onPathComplete]);
   
-  // Handle obstacle detection
+  // Handle obstacle detection with cooldown
   useEffect(() => {
-    if (!obstacleDetected || !routeData || !currentPosition) return;
+    if (!obstacleDetected || !routeData || !currentPosition || isRerouting) return;
+    
+    const now = Date.now();
+    // Only process obstacle if it's been at least 5 seconds since the last one
+    if (now - lastObstacleTime < 5000) {
+      resetObstacleDetected();
+      return;
+    }
     
     const handleObstacle = async () => {
+      setIsRerouting(true);
       setIsCalculating(true);
+      setLastObstacleTime(now);
       
       try {
         // Stop current animation
@@ -260,17 +327,26 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         // Get current route
         const currentRoute = routeData.routes[currentPathIndex];
         
-        // Try to get an alternative route from OSRM
         if (routeData.routes.length > 1) {
           // Switch to next alternative route
           const newPathIndex = (currentPathIndex + 1) % routeData.routes.length;
           setCurrentPathIndex(newPathIndex);
+          
+          toast({
+            title: "Obstacle Detected",
+            description: "Switching to alternative route",
+          });
         } else {
-          // If no alternative routes from OSRM, calculate a new one
+          // If no alternative routes, calculate a new one
           const currentCoordinates = {
             latitude: (currentPosition as L.LatLng).lat,
             longitude: (currentPosition as L.LatLng).lng
           };
+          
+          toast({
+            title: "Obstacle Detected",
+            description: "Calculating new route...",
+          });
           
           const alternativeRoute = await findAlternativeRoute(
             currentRoute,
@@ -294,8 +370,14 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         }
       } catch (error) {
         console.error("Error handling obstacle:", error);
+        toast({
+          title: "Rerouting Error",
+          description: "Failed to find alternative route",
+          variant: "destructive"
+        });
       } finally {
         setIsCalculating(false);
+        setIsRerouting(false);
         resetObstacleDetected();
         
         // Resume animation after a short delay
@@ -306,7 +388,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
     
     handleObstacle();
-  }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected]);
+  }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected, lastObstacleTime, isRerouting]);
   
   // Helper function to get a point along a path based on progress
   const getPointAlongPath = (path: L.LatLngExpression[], progress: number) => {
@@ -358,7 +440,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
             <p className="text-gray-600">
-              {obstacleDetected ? 'Obstacle detected! Recalculating path...' : 'Calculating optimal path...'}
+              {isRerouting ? 'Obstacle detected! Recalculating path...' : 'Calculating optimal path...'}
             </p>
           </div>
         </div>

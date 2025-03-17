@@ -1,7 +1,8 @@
 
-// Integration with OSRM API for path finding and routing
+// Integration with OSRM API for path finding and routing using Leaflet Routing Machine
 
 import L from 'leaflet';
+import 'leaflet-routing-machine';
 
 export interface Coordinates {
   latitude: number;
@@ -71,30 +72,69 @@ const decodePolyline = (encoded: string): L.LatLngExpression[] => {
   return coordinates;
 };
 
+// Function to geocode location names to coordinates using Nominatim
+async function geocodeLocation(location: string): Promise<Coordinates | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=1`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'PathFinderApplication/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Geocoding error: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      return {
+        latitude: parseFloat(data[0].lat),
+        longitude: parseFloat(data[0].lon)
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Geocoding error:", error);
+    return null;
+  }
+}
+
 // Function to fetch route from OSRM API
 export const findPath = async (
   source: string,
   destination: string
 ): Promise<PathFindingResponse> => {
   try {
-    // For demo, we'll use fixed coordinates based on the entered location names
-    // In a real app, you would geocode the addresses to get coordinates
-    const sourceCoords = getCoordinatesForLocation(source);
-    const destCoords = getCoordinatesForLocation(destination);
+    // First try to geocode the locations
+    const sourceCoords = await geocodeLocation(source);
+    const destCoords = await geocodeLocation(destination);
     
-    const url = `https://router.project-osrm.org/route/v1/driving/${sourceCoords.longitude},${sourceCoords.latitude};${destCoords.longitude},${destCoords.latitude}?overview=full&geometries=polyline&steps=true&alternatives=true`;
+    // If geocoding fails, fall back to our sample coordinates
+    const finalSourceCoords = sourceCoords || getCoordinatesForLocation(source);
+    const finalDestCoords = destCoords || getCoordinatesForLocation(destination);
+    
+    console.log(`Source coordinates for "${source}":`, finalSourceCoords);
+    console.log(`Destination coordinates for "${destination}":`, finalDestCoords);
+    
+    const url = `https://router.project-osrm.org/route/v1/driving/${finalSourceCoords.longitude},${finalSourceCoords.latitude};${finalDestCoords.longitude},${finalDestCoords.latitude}?overview=full&geometries=polyline&steps=true&alternatives=true`;
     
     console.log("Fetching route from OSRM:", url);
     
     // Fetch route data from OSRM
     const response = await fetch(url);
     if (!response.ok) {
+      console.error(`OSRM API error: ${response.statusText}`);
       throw new Error(`OSRM API error: ${response.statusText}`);
     }
     
     const data = await response.json();
     
     if (data.code !== 'Ok') {
+      console.error(`OSRM routing error: ${data.message || 'Unknown error'}`);
       throw new Error(`OSRM routing error: ${data.message || 'Unknown error'}`);
     }
     
@@ -130,12 +170,12 @@ export const findPath = async (
     return {
       routes,
       sourceLocation: {
-        latitude: sourceCoords.latitude,
-        longitude: sourceCoords.longitude
+        latitude: finalSourceCoords.latitude,
+        longitude: finalSourceCoords.longitude
       },
       destinationLocation: {
-        latitude: destCoords.latitude,
-        longitude: destCoords.longitude
+        latitude: finalDestCoords.latitude,
+        longitude: finalDestCoords.longitude
       }
     };
   } catch (error) {
@@ -148,8 +188,7 @@ export const findPath = async (
 
 // Helper function to generate sample coordinates based on location names
 function getCoordinatesForLocation(location: string): { latitude: number, longitude: number } {
-  // This is a simplified lookup for demo purposes
-  // In a real application, you would use a geocoding service
+  // Real-world coordinates for known locations
   const locationMap: Record<string, { latitude: number, longitude: number }> = {
     'New York': { latitude: 40.7128, longitude: -74.0060 },
     'Boston': { latitude: 42.3601, longitude: -71.0589 },
@@ -161,31 +200,50 @@ function getCoordinatesForLocation(location: string): { latitude: number, longit
     'Austin': { latitude: 30.2672, longitude: -97.7431 },
     'Denver': { latitude: 39.7392, longitude: -104.9903 },
     'Philadelphia': { latitude: 39.9526, longitude: -75.1652 },
+    'Washington DC': { latitude: 38.8951, longitude: -77.0364 },
+    'Atlanta': { latitude: 33.7490, longitude: -84.3880 },
+    'Dallas': { latitude: 32.7767, longitude: -96.7970 },
+    'Houston': { latitude: 29.7604, longitude: -95.3698 },
+    'Phoenix': { latitude: 33.4484, longitude: -112.0740 },
+    'Las Vegas': { latitude: 36.1699, longitude: -115.1398 },
+    'Portland': { latitude: 45.5152, longitude: -122.6784 },
+    'San Diego': { latitude: 32.7157, longitude: -117.1611 },
+    'Minneapolis': { latitude: 44.9778, longitude: -93.2650 },
+    'Detroit': { latitude: 42.3314, longitude: -83.0458 },
+    'London': { latitude: 51.5074, longitude: -0.1278 },
+    'Paris': { latitude: 48.8566, longitude: 2.3522 },
+    'Berlin': { latitude: 52.5200, longitude: 13.4050 },
+    'Rome': { latitude: 41.9028, longitude: 12.4964 },
+    'Tokyo': { latitude: 35.6762, longitude: 139.6503 },
+    'Sydney': { latitude: -33.8688, longitude: 151.2093 },
+    'Toronto': { latitude: 43.6532, longitude: -79.3832 },
+    'Vancouver': { latitude: 49.2827, longitude: -123.1207 },
+    'Barcelona': { latitude: 41.3851, longitude: 2.1734 },
+    'Madrid': { latitude: 40.4168, longitude: -3.7038 },
   };
   
   // Return coordinates for known locations, or generate random ones
   if (locationMap[location]) {
     return locationMap[location];
   } else {
-    // Generate slightly random coordinates for unknown locations
-    // This ensures varied paths for demonstration
-    const baseLatitude = 40.7128; // New York as center
-    const baseLongitude = -74.0060;
+    // Generate more structured coordinates for unknown locations
+    // by creating a grid around the world instead of completely random positions
     
-    // Create a hash from the location string for consistent randomness
+    // Create a hash from the location string for consistent results
     let hash = 0;
     for (let i = 0; i < location.length; i++) {
       hash = ((hash << 5) - hash) + location.charCodeAt(i);
       hash |= 0; // Convert to 32bit integer
     }
     
-    // Use the hash to generate "random" but consistent coordinates
-    const latOffset = (hash % 1000) / 1000 * 10 - 5; // -5 to 5 degrees
-    const lngOffset = ((hash >> 10) % 1000) / 1000 * 10 - 5;
+    // Generate a range from -90 to 90 for latitude and -180 to 180 for longitude
+    // but bias towards populated areas (-60 to 70 latitude, -140 to 140 longitude)
+    const latBase = ((hash % 1000) / 1000) * 130 - 60; // -60 to 70
+    const lngBase = (((hash >> 10) % 1000) / 1000) * 280 - 140; // -140 to 140
     
     return {
-      latitude: baseLatitude + latOffset,
-      longitude: baseLongitude + lngOffset
+      latitude: Math.min(85, Math.max(-85, latBase)), // Clamp to valid range
+      longitude: Math.min(180, Math.max(-180, lngBase))
     };
   }
 }
@@ -197,20 +255,10 @@ export const findAlternativeRoute = async (
   destinationLocation: Coordinates
 ): Promise<Route> => {
   try {
-    // Convert current position to string format for OSRM
-    const currentPosStr = `${currentPosition.longitude},${currentPosition.latitude}`;
-    const destStr = `${destinationLocation.longitude},${destinationLocation.latitude}`;
+    // Try to find an alternative route using OSRM
+    const url = `https://router.project-osrm.org/route/v1/driving/${currentPosition.longitude},${currentPosition.latitude};${destinationLocation.longitude},${destinationLocation.latitude}?overview=full&geometries=polyline&steps=true&alternatives=true`;
     
-    // Add a slight offset to current position to force a different route
-    const offsetPosition = {
-      latitude: currentPosition.latitude + 0.0005,
-      longitude: currentPosition.longitude + 0.0005
-    };
-    
-    const offsetPosStr = `${offsetPosition.longitude},${offsetPosition.latitude}`;
-    
-    // Call OSRM with an additional waypoint to get a different route
-    const url = `https://router.project-osrm.org/route/v1/driving/${currentPosStr};${offsetPosStr};${destStr}?overview=full&geometries=polyline&steps=true`;
+    console.log("Fetching alternative route from OSRM:", url);
     
     const response = await fetch(url);
     if (!response.ok) {
@@ -223,27 +271,41 @@ export const findAlternativeRoute = async (
       throw new Error('No alternative routes found');
     }
     
+    // If we have multiple routes, try to select one that's different from the current one
+    let selectedRouteIndex = 0;
+    if (data.routes.length > 1) {
+      // Select a route with the most different distance from the current one
+      const currentDistance = currentRoute.distance;
+      let maxDifference = 0;
+      
+      for (let i = 0; i < data.routes.length; i++) {
+        const differenceRatio = Math.abs(data.routes[i].distance - currentDistance) / currentDistance;
+        if (differenceRatio > maxDifference) {
+          maxDifference = differenceRatio;
+          selectedRouteIndex = i;
+        }
+      }
+    }
+    
     // Process the new route
-    const newRoute = data.routes[0];
+    const newRoute = data.routes[selectedRouteIndex];
     const geometry = decodePolyline(newRoute.geometry);
     
-    const segments: PathSegment[] = newRoute.legs.flatMap((leg: any) => {
-      return leg.steps.map((step: any) => {
-        return {
-          distance: step.distance,
-          duration: step.duration,
-          startLocation: {
-            latitude: step.maneuver.location[1],
-            longitude: step.maneuver.location[0]
-          },
-          endLocation: {
-            latitude: step.geometry ? geometry[geometry.length - 1][0] : step.maneuver.location[1],
-            longitude: step.geometry ? geometry[geometry.length - 1][1] : step.maneuver.location[0]
-          },
-          instructions: step.maneuver.instruction,
-          geometry: decodePolyline(step.geometry)
-        };
-      });
+    const segments: PathSegment[] = newRoute.legs[0].steps.map((step: any) => {
+      return {
+        distance: step.distance,
+        duration: step.duration,
+        startLocation: {
+          latitude: step.maneuver.location[1],
+          longitude: step.maneuver.location[0]
+        },
+        endLocation: {
+          latitude: step.geometry ? geometry[geometry.length - 1][0] : step.maneuver.location[1],
+          longitude: step.geometry ? geometry[geometry.length - 1][1] : step.maneuver.location[0]
+        },
+        instructions: step.maneuver.instruction,
+        geometry: decodePolyline(step.geometry)
+      };
     });
     
     return {
