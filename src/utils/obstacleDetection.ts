@@ -2,6 +2,9 @@
 // This is a simulation of obstacle detection for demo purposes
 // In a real application, we would use computer vision algorithms here
 
+let lastObstacleTime = 0;
+const OBSTACLE_COOLDOWN = 5000; // 5 seconds cooldown between obstacle detections
+
 export const detectObstacle = async (canvas: HTMLCanvasElement): Promise<boolean> => {
   // For demo purposes, we'll simulate random obstacle detection
   // In a real implementation, this would use a proper CV algorithm or ML model
@@ -9,12 +12,20 @@ export const detectObstacle = async (canvas: HTMLCanvasElement): Promise<boolean
   // Simulate processing delay
   await new Promise(resolve => setTimeout(resolve, 300));
   
+  const currentTime = Date.now();
+  
+  // Check if we're still in cooldown period
+  if (currentTime - lastObstacleTime < OBSTACLE_COOLDOWN) {
+    return false;
+  }
+  
   // For demo, randomly detect obstacles about 10% of the time
   // Set to higher rate to see more obstacle detections and rerouting
   const hasObstacle = Math.random() < 0.1;
   
   if (hasObstacle) {
     console.log('Obstacle detected!');
+    lastObstacleTime = currentTime;
   }
   
   return hasObstacle;
