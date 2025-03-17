@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -84,12 +85,105 @@ export default {
 					to: {
 						height: '0'
 					}
-				}
+				},
+                'fade-in': {
+                    '0%': {
+                        opacity: '0',
+                        transform: 'translateY(10px)'
+                    },
+                    '100%': {
+                        opacity: '1',
+                        transform: 'translateY(0)'
+                    }
+                },
+                'scale-in': {
+                    '0%': {
+                        opacity: '0',
+                        transform: 'scale(0.95)'
+                    },
+                    '100%': {
+                        opacity: '1',
+                        transform: 'scale(1)'
+                    }
+                },
+                'slide-in': {
+                    '0%': {
+                        opacity: '0',
+                        transform: 'translateX(20px)'
+                    },
+                    '100%': {
+                        opacity: '1',
+                        transform: 'translateX(0)'
+                    }
+                },
+                'pulse-slow': {
+                    '0%, 100%': {
+                        opacity: '1'
+                    },
+                    '50%': {
+                        opacity: '0.8'
+                    }
+                },
+                'path-dash': {
+                    '0%': {
+                        'stroke-dashoffset': '100'
+                    },
+                    '100%': {
+                        'stroke-dashoffset': '0'
+                    }
+                },
+                'rotate-slow': {
+                    '0%': {
+                        transform: 'rotate(0deg)'
+                    },
+                    '100%': {
+                        transform: 'rotate(360deg)'
+                    }
+                },
+                'move-along-path': {
+                    '0%': {
+                        'offset-distance': '0%'
+                    },
+                    '100%': {
+                        'offset-distance': '100%'
+                    }
+                },
+                'float': {
+                    '0%, 100%': {
+                        transform: 'translateY(0)'
+                    },
+                    '50%': {
+                        transform: 'translateY(-10px)'
+                    }
+                }
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
-			}
+				'accordion-up': 'accordion-up 0.2s ease-out',
+                'fade-in': 'fade-in 0.5s ease-out forwards',
+                'scale-in': 'scale-in 0.3s ease-out forwards',
+                'slide-in': 'slide-in 0.4s ease-out forwards',
+                'pulse-slow': 'pulse-slow 3s infinite ease-in-out',
+                'path-dash': 'path-dash 2s ease-in-out forwards',
+                'rotate-slow': 'rotate-slow 8s linear infinite',
+                'move-along-path': 'move-along-path 10s linear forwards',
+                'float': 'float 6s ease-in-out infinite'
+			},
+            backdropFilter: {
+                'none': 'none',
+                'blur': 'blur(20px)',
+            },
+            transitionProperty: {
+                'height': 'height',
+                'width': 'width',
+                'spacing': 'margin, padding',
+            },
+            transitionDuration: {
+                '2000': '2000ms',
+            },
+            transitionTimingFunction: {
+                'bounce-in-out': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+            }
 		}
 	},
 	plugins: [require("tailwindcss-animate")],

@@ -1,0 +1,184 @@
+
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import CameraFeed from '../components/CameraFeed';
+import PathVisualization from '../components/PathVisualization';
+import ObstacleAlert from '../components/ObstacleAlert';
+
+const PathFinder = () => {
+  const navigate = useNavigate();
+  const [source, setSource] = useState('');
+  const [destination, setDestination] = useState('');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isPathComplete, setIsPathComplete] = useState(false);
+  const [obstacleDetected, setObstacleDetected] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
+  
+  // Get location data from session storage
+  useEffect(() => {
+    const storedSource = sessionStorage.getItem('sourceLocation');
+    const storedDestination = sessionStorage.getItem('destinationLocation');
+    
+    if (!storedSource || !storedDestination) {
+      // If no location data, redirect back to index
+      navigate('/');
+      return;
+    }
+    
+    setSource(storedSource);
+    setDestination(storedDestination);
+    
+    // Activate camera after a delay
+    setTimeout(() => {
+      setIsCameraActive(true);
+    }, 1000);
+  }, [navigate]);
+  
+  const handleObstacleDetected = () => {
+    if (!obstacleDetected && !isPathComplete) {
+      setObstacleDetected(true);
+      setShowAlert(true);
+    }
+  };
+  
+  const resetObstacleDetected = () => {
+    setObstacleDetected(false);
+  };
+  
+  const handlePathComplete = () => {
+    setIsPathComplete(true);
+    setIsCameraActive(false);
+  };
+  
+  const handleCloseAlert = () => {
+    setShowAlert(false);
+  };
+  
+  const handleBack = () => {
+    navigate('/');
+  };
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-sky-100 p-4 sm:p-6">
+      <ObstacleAlert isVisible={showAlert} onClose={handleCloseAlert} />
+      
+      <motion.div
+        className="max-w-6xl mx-auto"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <motion.button
+            onClick={handleBack}
+            className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            whileHover={{ x: -3 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </motion.button>
+          
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-1">NAVIGATION IN PROGRESS</div>
+            <h1 className="text-lg font-medium">
+              {source} 
+              <svg xmlns="http://www.w3.org/2000/svg" className="inline-block h-4 w-4 mx-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg> 
+              {destination}
+            </h1>
+          </div>
+          
+          <div className="flex items-center">
+            <div className={`h-2 w-2 rounded-full mr-2 ${isCameraActive ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+            <span className="text-sm text-gray-600">
+              {isCameraActive ? 'Monitoring' : 'Standby'}
+            </span>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="glass-card rounded-xl overflow-hidden h-[400px]"
+          >
+            <div className="p-4 bg-white/80 border-b">
+              <h2 className="font-medium">Path Visualization</h2>
+              <div className="text-xs text-gray-500 mt-1">
+                {isPathComplete ? 'Journey Complete' : 'Journey in Progress'}
+              </div>
+            </div>
+            
+            <div className="p-0 h-[calc(100%-57px)]"> {/* Adjust height to account for header */}
+              <PathVisualization
+                source={source}
+                destination={destination}
+                onPathComplete={handlePathComplete}
+                obstacleDetected={obstacleDetected}
+                resetObstacleDetected={resetObstacleDetected}
+              />
+            </div>
+          </motion.div>
+          
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="glass-card rounded-xl overflow-hidden h-[400px]"
+          >
+            <div className="p-4 bg-white/80 border-b">
+              <h2 className="font-medium">Obstacle Detection</h2>
+              <div className="text-xs text-gray-500 mt-1">
+                {isCameraActive ? 'Monitoring for obstacles in real-time' : 'Camera inactive'}
+              </div>
+            </div>
+            
+            <div className="h-[calc(100%-57px)]"> {/* Adjust height to account for header */}
+              <CameraFeed
+                onObstacleDetected={handleObstacleDetected}
+                isActive={isCameraActive}
+              />
+            </div>
+          </motion.div>
+        </div>
+        
+        {isPathComplete && (
+          <motion.div
+            className="mt-6 text-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="glass-card p-6 inline-block">
+              <div className="flex items-center justify-center text-green-500 mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-medium mb-2">Destination Reached</h2>
+              <p className="text-gray-600">You have successfully arrived at your destination.</p>
+              <button
+                onClick={handleBack}
+                className="btn-primary mt-4"
+              >
+                Start New Journey
+              </button>
+            </div>
+          </motion.div>
+        )}
+        
+        <div className="mt-8 text-center text-xs text-gray-500">
+          Smart Path Finder &copy; {new Date().getFullYear()} • Real-time Navigation with Obstacle Detection
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default PathFinder;
