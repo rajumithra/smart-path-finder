@@ -30,6 +30,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const [sceneComplexity, setSceneComplexity] = useState(0);
   const [lastObstacleImage, setLastObstacleImage] = useState<string | null>(null);
   const [recentObstacles, setRecentObstacles] = useState<ObstacleRecord[]>([]);
+  const [notifiedObstacleIds, setNotifiedObstacleIds] = useState<Set<string>>(new Set());
   
   // Request camera access and set up video stream
   useEffect(() => {
@@ -84,17 +85,28 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   useEffect(() => {
     if (currentLocation) {
       const nearbyObstacles = checkForSimilarObstacles(currentLocation, 500);
-      setRecentObstacles(nearbyObstacles.slice(0, 3));
       
-      if (nearbyObstacles.length > 0) {
+      // Filter out obstacles we've already notified about
+      const newObstacles = nearbyObstacles.filter(
+        obstacle => !notifiedObstacleIds.has(obstacle.id)
+      );
+      
+      setRecentObstacles(newObstacles.slice(0, 3));
+      
+      if (newObstacles.length > 0) {
+        // Add these obstacle IDs to our notified set
+        const updatedNotifiedIds = new Set(notifiedObstacleIds);
+        newObstacles.forEach(obstacle => updatedNotifiedIds.add(obstacle.id));
+        setNotifiedObstacleIds(updatedNotifiedIds);
+        
         toast({
-          title: `${nearbyObstacles.length} similar obstacles nearby`,
+          title: `${newObstacles.length} similar obstacles nearby`,
           description: "Be cautious! Similar obstacles have been detected in this area before.",
           variant: "warning"
         });
       }
     }
-  }, [currentLocation]);
+  }, [currentLocation, notifiedObstacleIds]);
   
   // Set up obstacle detection processing loop
   useEffect(() => {

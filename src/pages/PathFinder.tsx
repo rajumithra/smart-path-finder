@@ -29,6 +29,7 @@ const PathFinder = () => {
   });
   const [obstacleCount, setObstacleCount] = useState(0);
   const [viewObstacleHistory, setViewObstacleHistory] = useState(false);
+  const [processedObstacleIds, setProcessedObstacleIds] = useState<Set<string>>(new Set());
   
   useEffect(() => {
     const storedSource = sessionStorage.getItem('sourceLocation');
@@ -54,13 +55,16 @@ const PathFinder = () => {
       setObstacleCount(prev => prev + 1);
       
       if (obstacleRecord) {
-        setLastObstacleRecord(obstacleRecord);
-        
-        toast({
-          title: `${obstacleRecord.type} Detected`,
-          description: `A ${obstacleRecord.type} obstacle was detected and image saved`,
-          variant: "warning"
-        });
+        if (!processedObstacleIds.has(obstacleRecord.id)) {
+          setLastObstacleRecord(obstacleRecord);
+          setProcessedObstacleIds(prev => new Set(prev).add(obstacleRecord.id));
+          
+          toast({
+            title: `${obstacleRecord.type} Detected`,
+            description: `A ${obstacleRecord.type} obstacle was detected and image saved`,
+            variant: "warning"
+          });
+        }
       }
     }
   };
