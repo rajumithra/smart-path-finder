@@ -1,8 +1,9 @@
 
-// Integration with OSRM API for path finding and routing using Leaflet Routing Machine
+// Integration with OSRM API for path finding and routing
 
 import L from 'leaflet';
-import 'leaflet-routing-machine';
+// Note: Leaflet Routing Machine is used but not directly imported here
+// as the namespace is accessed through the L object
 
 export interface Coordinates {
   latitude: number;
@@ -16,6 +17,7 @@ export interface PathSegment {
   endLocation: Coordinates;
   instructions: string;
   geometry: L.LatLngExpression[];
+  transportMode?: 'driving' | 'flight';
 }
 
 export interface Route {
@@ -23,6 +25,7 @@ export interface Route {
   duration: number; // in seconds
   segments: PathSegment[];
   geometry: L.LatLngExpression[];
+  transportMode?: 'driving' | 'flight';
 }
 
 export interface PathFindingResponse {
@@ -155,7 +158,8 @@ export const findPath = async (
             longitude: step.geometry ? geometry[geometry.length - 1][1] : step.maneuver.location[0]
           },
           instructions: step.maneuver.instruction,
-          geometry: decodePolyline(step.geometry)
+          geometry: decodePolyline(step.geometry),
+          transportMode: 'driving'
         };
       });
       
@@ -163,9 +167,14 @@ export const findPath = async (
         distance: route.distance,
         duration: route.duration,
         segments,
-        geometry
+        geometry,
+        transportMode: 'driving'
       };
     });
+    
+    // Generate a flight route as an alternative
+    const flightRoute = generateFlightRoute(finalSourceCoords, finalDestCoords);
+    routes.push(flightRoute);
     
     return {
       routes,
@@ -185,6 +194,44 @@ export const findPath = async (
     return generateSimulatedRouteData(source, destination);
   }
 };
+
+// Generate a flight route between two locations
+function generateFlightRoute(sourceCoords: Coordinates, destCoords: Coordinates): Route {
+  // Create a direct flight route
+  const flightGeometry: L.LatLngExpression[] = [
+    [sourceCoords.latitude, sourceCoords.longitude],
+    [destCoords.latitude, destCoords.longitude]
+  ];
+  
+  // Calculate as-the-crow-flies distance
+  const distance = calculateDistance(
+    sourceCoords.latitude, sourceCoords.longitude,
+    destCoords.latitude, destCoords.longitude
+  );
+  
+  // Assume a flight speed of 800 km/h (222 m/s)
+  const flightSpeed = 222;
+  const duration = distance / flightSpeed;
+  
+  // Create a flight segment
+  const segment: PathSegment = {
+    distance: distance,
+    duration: duration,
+    startLocation: sourceCoords,
+    endLocation: destCoords,
+    instructions: "Fly directly to destination",
+    geometry: flightGeometry,
+    transportMode: 'flight'
+  };
+  
+  return {
+    distance: distance,
+    duration: duration,
+    segments: [segment],
+    geometry: flightGeometry,
+    transportMode: 'flight'
+  };
+}
 
 // Helper function to generate sample coordinates based on location names
 function getCoordinatesForLocation(location: string): { latitude: number, longitude: number } {
@@ -256,6 +303,7 @@ export const findAlternativeRoute = async (
 ): Promise<Route> => {
   try {
     // Try to find an alternative route using OSRM
+    // Note: We're starting from the CURRENT POSITION now, not the original source
     const url = `https://router.project-osrm.org/route/v1/driving/${currentPosition.longitude},${currentPosition.latitude};${destinationLocation.longitude},${destinationLocation.latitude}?overview=full&geometries=polyline&steps=true&alternatives=true`;
     
     console.log("Fetching alternative route from OSRM:", url);
@@ -304,7 +352,8 @@ export const findAlternativeRoute = async (
           longitude: step.geometry ? geometry[geometry.length - 1][1] : step.maneuver.location[0]
         },
         instructions: step.maneuver.instruction,
-        geometry: decodePolyline(step.geometry)
+        geometry: decodePolyline(step.geometry),
+        transportMode: 'driving'
       };
     });
     
@@ -312,7 +361,8 @@ export const findAlternativeRoute = async (
       distance: newRoute.distance,
       duration: newRoute.duration,
       segments,
-      geometry
+      geometry,
+      transportMode: 'driving'
     };
   } catch (error) {
     console.error("Error finding alternative route:", error);
@@ -365,7 +415,8 @@ function generateSimulatedRouteData(source: string, destination: string): PathFi
         instructions: i === 0 
           ? `Head toward ${destination}` 
           : `Continue toward ${destination}`,
-        geometry: [startPoint, endPoint]
+        geometry: [startPoint, endPoint],
+        transportMode: 'driving'
       });
     }
     
@@ -377,12 +428,17 @@ function generateSimulatedRouteData(source: string, destination: string): PathFi
       distance: totalDistance,
       duration: totalDuration,
       segments,
-      geometry: allPoints
+      geometry: allPoints,
+      transportMode: 'driving'
     };
   });
   
-  // Sort routes by distance (shortest first)
-  routes.sort((a, b) => a.distance - b.distance);
+  // Add a flight route
+  const flightRoute = generateFlightRoute(sourceCoords, destCoords);
+  routes.push(flightRoute);
+  
+  // Sort routes by duration (shortest first)
+  routes.sort((a, b) => a.duration - b.duration);
   
   return {
     routes,
@@ -437,7 +493,8 @@ function generateFallbackAlternativeRoute(
       instructions: i === 0 
         ? "Take detour due to obstacle" 
         : "Continue to destination",
-      geometry: [startPoint, endPoint]
+      geometry: [startPoint, endPoint],
+      transportMode: 'driving'
     });
   }
   
@@ -449,7 +506,8 @@ function generateFallbackAlternativeRoute(
     distance: totalDistance,
     duration: totalDuration,
     segments,
-    geometry: allPoints
+    geometry: allPoints,
+    transportMode: 'driving'
   };
 }
 

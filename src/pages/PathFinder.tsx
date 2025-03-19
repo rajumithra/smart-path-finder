@@ -14,6 +14,7 @@ const PathFinder = () => {
   const [isPathComplete, setIsPathComplete] = useState(false);
   const [obstacleDetected, setObstacleDetected] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
+  const [transportMode, setTransportMode] = useState<'driving' | 'flight'>('driving');
   
   // Get location data from session storage
   useEffect(() => {
@@ -57,6 +58,10 @@ const PathFinder = () => {
   
   const handleBack = () => {
     navigate('/');
+  };
+  
+  const handleTransportModeChange = (mode: 'driving' | 'flight') => {
+    setTransportMode(mode);
   };
   
   return (
@@ -109,7 +114,42 @@ const PathFinder = () => {
             className="glass-card rounded-xl overflow-hidden h-[400px]"
           >
             <div className="p-4 bg-white/80 border-b">
-              <h2 className="font-medium">Path Visualization</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="font-medium">Path Visualization</h2>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={() => handleTransportModeChange('driving')}
+                    className={`px-2 py-1 text-xs rounded-full ${
+                      transportMode === 'driving' 
+                        ? 'bg-blue-100 text-blue-700' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                      </svg>
+                      Ground
+                    </span>
+                  </button>
+                  <button 
+                    onClick={() => handleTransportModeChange('flight')}
+                    className={`px-2 py-1 text-xs rounded-full ${
+                      transportMode === 'flight' 
+                        ? 'bg-purple-100 text-purple-700' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      Flight
+                    </span>
+                  </button>
+                </div>
+              </div>
+              
               <div className="text-xs text-gray-500 mt-1">
                 {isPathComplete ? 'Journey Complete' : 'Journey in Progress'}
               </div>

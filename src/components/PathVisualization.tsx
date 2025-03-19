@@ -1,9 +1,7 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import { findPath, findAlternativeRoute, Route, PathFindingResponse } from '../utils/pathFinding';
 import { toast } from '@/components/ui/use-toast';
 
@@ -39,9 +37,8 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const markerRef = useRef<L.Marker | null>(null);
   const sourceMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
-  const routingControlRef = useRef<L.Routing.Control | null>(null);
+  const routingControlRef = useRef<any>(null);
   
-  // Load path data when source and destination are set
   useEffect(() => {
     if (!source || !destination) return;
     
@@ -51,7 +48,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         const pathData = await findPath(source, destination);
         setRouteData(pathData);
         
-        // Set initial position to start location
         if (pathData.routes.length > 0) {
           const startPoint: L.LatLngExpression = [
             pathData.sourceLocation.latitude,
@@ -77,13 +73,11 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     loadPathData();
   }, [source, destination]);
   
-  // Initialize Leaflet map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     
-    // Create Leaflet map
     const map = L.map(mapContainerRef.current, {
-      center: [40.7128, -74.0060], // Default to New York
+      center: [40.7128, -74.0060],
       zoom: 13,
       layers: [
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -95,7 +89,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     mapRef.current = map;
     setMapLoaded(true);
     
-    // Clean up on unmount
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
@@ -104,13 +97,11 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
   }, []);
   
-  // Update map when route data changes
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || !routeData) return;
     
     const map = mapRef.current;
     
-    // Clear previous routes and markers
     routeLayersRef.current.forEach(layer => {
       map.removeLayer(layer);
     });
@@ -134,7 +125,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       routeData.destinationLocation.longitude
     ];
     
-    // Custom icons for source and destination
     const sourceIcon = L.divIcon({
       html: `<div class="flex items-center justify-center w-6 h-6 bg-green-500 text-white rounded-full shadow-lg border-2 border-white">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -166,66 +156,40 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       .addTo(map)
       .bindPopup(`<b>Destination:</b> ${destination}`);
     
-    // Add routing control
-    try {
-      // @ts-ignore - Leaflet Routing Machine types are not fully compatible
-      routingControlRef.current = L.Routing.control({
-        waypoints: [
-          L.latLng(sourcePoint[0], sourcePoint[1]),
-          L.latLng(destPoint[0], destPoint[1])
-        ],
-        routeWhileDragging: false,
-        showAlternatives: true,
-        fitSelectedRoutes: true,
-        lineOptions: {
-          styles: [
-            { color: '#3b82f6', opacity: 0.8, weight: 5 },
-            { color: 'white', opacity: 0.3, weight: 10 }
-          ]
-        },
-        altLineOptions: {
-          styles: [
-            { color: '#9ca3af', opacity: 0.6, weight: 3, dashArray: '5,8' },
-            { color: 'white', opacity: 0.2, weight: 8 }
-          ]
-        },
-        createMarker: function() { return null; } // Don't create default markers
+    routeData.routes.forEach((route, index) => {
+      const isCurrentRoute = index === currentPathIndex;
+      const isFlightRoute = route.transportMode === 'flight';
+      
+      const polyline = L.polyline(route.geometry, {
+        color: isFlightRoute ? '#9c4dff' : (isCurrentRoute ? '#3b82f6' : '#9ca3af'),
+        weight: isCurrentRoute ? 5 : 3,
+        opacity: isCurrentRoute ? 1 : 0.6,
+        dashArray: isFlightRoute ? '10, 10' : (isCurrentRoute ? '' : '5, 5'),
       }).addTo(map);
       
-      // Manually draw all routes from our data as well
-      routeData.routes.forEach((route, index) => {
-        const isCurrentRoute = index === currentPathIndex;
-        
-        // Create polyline for route
-        const polyline = L.polyline(route.geometry, {
-          color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
-          weight: isCurrentRoute ? 5 : 3,
-          opacity: isCurrentRoute ? 1 : 0.6,
-          dashArray: isCurrentRoute ? '' : '5, 5',
-        }).addTo(map);
-        
-        routeLayersRef.current.push(polyline);
-      });
-    } catch (error) {
-      console.error("Error creating routing control:", error);
+      if (isFlightRoute) {
+        const midPoint = route.geometry[Math.floor(route.geometry.length / 2)];
+        if (midPoint) {
+          const flightIcon = L.divIcon({
+            html: `<div class="bg-white px-2 py-1 rounded shadow text-xs">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Flight Route (${Math.round(route.duration / 60)} min)
+                  </div>`,
+            className: '',
+            iconSize: [120, 30],
+            iconAnchor: [60, 15]
+          });
+          
+          const marker = L.marker(midPoint as L.LatLngExpression, { icon: flightIcon }).addTo(map);
+          routeLayersRef.current.push(marker);
+        }
+      }
       
-      // Fallback to just drawing the routes if routing control fails
-      routeData.routes.forEach((route, index) => {
-        const isCurrentRoute = index === currentPathIndex;
-        
-        // Create polyline for route
-        const polyline = L.polyline(route.geometry, {
-          color: isCurrentRoute ? '#3b82f6' : '#9ca3af',
-          weight: isCurrentRoute ? 5 : 3,
-          opacity: isCurrentRoute ? 1 : 0.6,
-          dashArray: isCurrentRoute ? '' : '5, 5',
-        }).addTo(map);
-        
-        routeLayersRef.current.push(polyline);
-      });
-    }
+      routeLayersRef.current.push(polyline);
+    });
     
-    // Create marker for current position if not already created
     if (currentPosition) {
       if (markerRef.current) map.removeLayer(markerRef.current);
       
@@ -245,26 +209,21 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         .bindPopup('Current Position');
     }
     
-    // Fit map to show all routes
     const bounds = L.latLngBounds([sourcePoint, destPoint]);
     map.fitBounds(bounds, { padding: [50, 50] });
-    
   }, [mapLoaded, routeData, currentPathIndex, source, destination]);
   
-  // Handle animation and position updates
   useEffect(() => {
     if (!mapLoaded || !routeData || routeData.routes.length === 0 || 
         !isMoving || isCalculating || !mapRef.current || !markerRef.current) {
       return;
     }
     
-    // Get current route
     const currentRoute = routeData.routes[currentPathIndex];
     const routePath = currentRoute.geometry;
     
-    // Set up animation
     let startTime: number | null = null;
-    const duration = 15000; // 15 seconds for full path traversal
+    const duration = 15000;
     
     const animate = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
@@ -273,22 +232,18 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       
       setPathProgress(progress);
       
-      // Calculate current position along the path
       if (routePath.length > 1 && markerRef.current && mapRef.current) {
         const currentPos = getPointAlongPath(routePath, progress);
         
-        // Update marker position
         markerRef.current.setLatLng(currentPos);
         setCurrentPosition(currentPos);
         
-        // Optionally pan map to follow
         mapRef.current.panTo(currentPos);
       }
       
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
-        // Path complete
         onPathComplete();
       }
     };
@@ -302,12 +257,10 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
   }, [mapLoaded, routeData, currentPathIndex, isMoving, isCalculating, onPathComplete]);
   
-  // Handle obstacle detection with cooldown
   useEffect(() => {
     if (!obstacleDetected || !routeData || !currentPosition || isRerouting) return;
     
     const now = Date.now();
-    // Only process obstacle if it's been at least 5 seconds since the last one
     if (now - lastObstacleTime < 5000) {
       resetObstacleDetected();
       return;
@@ -319,25 +272,102 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       setLastObstacleTime(now);
       
       try {
-        // Stop current animation
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current);
         }
         
-        // Get current route
         const currentRoute = routeData.routes[currentPathIndex];
         
-        if (routeData.routes.length > 1) {
-          // Switch to next alternative route
-          const newPathIndex = (currentPathIndex + 1) % routeData.routes.length;
-          setCurrentPathIndex(newPathIndex);
+        if (currentRoute.transportMode === 'flight') {
+          const drivingRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'driving');
+          if (drivingRouteIndex >= 0) {
+            setCurrentPathIndex(drivingRouteIndex);
+            toast({
+              title: "Obstacle Detected",
+              description: "Switching from flight to ground transportation",
+            });
+          } else {
+            const currentCoordinates = {
+              latitude: (currentPosition as L.LatLng).lat,
+              longitude: (currentPosition as L.LatLng).lng
+            };
+            
+            toast({
+              title: "Obstacle Detected",
+              description: "Calculating new ground route...",
+            });
+            
+            const alternativeRoute = await findAlternativeRoute(
+              currentRoute,
+              currentCoordinates,
+              routeData.destinationLocation
+            );
+            
+            setRouteData(prev => {
+              if (!prev) return null;
+              
+              const updatedRoutes = [...prev.routes];
+              updatedRoutes.push(alternativeRoute);
+              setCurrentPathIndex(updatedRoutes.length - 1);
+              
+              return {
+                ...prev,
+                routes: updatedRoutes
+              };
+            });
+          }
+        } else if (routeData.routes.length > 1) {
+          const flightRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'flight');
           
-          toast({
-            title: "Obstacle Detected",
-            description: "Switching to alternative route",
-          });
+          if (flightRouteIndex >= 0 && currentPathIndex !== flightRouteIndex) {
+            setCurrentPathIndex(flightRouteIndex);
+            toast({
+              title: "Obstacle Detected",
+              description: "Switching to flight route to avoid obstacle",
+            });
+          } else {
+            const nextDrivingRouteIndex = routeData.routes.findIndex((r, i) => 
+              i !== currentPathIndex && r.transportMode === 'driving'
+            );
+            
+            if (nextDrivingRouteIndex >= 0) {
+              setCurrentPathIndex(nextDrivingRouteIndex);
+              toast({
+                title: "Obstacle Detected",
+                description: "Switching to alternative driving route",
+              });
+            } else {
+              const currentCoordinates = {
+                latitude: (currentPosition as L.LatLng).lat,
+                longitude: (currentPosition as L.LatLng).lng
+              };
+              
+              toast({
+                title: "Obstacle Detected",
+                description: "Calculating new route from current position...",
+              });
+              
+              const alternativeRoute = await findAlternativeRoute(
+                currentRoute,
+                currentCoordinates,
+                routeData.destinationLocation
+              );
+              
+              setRouteData(prev => {
+                if (!prev) return null;
+                
+                const updatedRoutes = [...prev.routes];
+                updatedRoutes.push(alternativeRoute);
+                setCurrentPathIndex(updatedRoutes.length - 1);
+                
+                return {
+                  ...prev,
+                  routes: updatedRoutes
+                };
+              });
+            }
+          }
         } else {
-          // If no alternative routes, calculate a new one
           const currentCoordinates = {
             latitude: (currentPosition as L.LatLng).lat,
             longitude: (currentPosition as L.LatLng).lng
@@ -345,7 +375,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           
           toast({
             title: "Obstacle Detected",
-            description: "Calculating new route...",
+            description: "Calculating new route from current position...",
           });
           
           const alternativeRoute = await findAlternativeRoute(
@@ -354,13 +384,12 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
             routeData.destinationLocation
           );
           
-          // Update route data with new alternative
           setRouteData(prev => {
             if (!prev) return null;
             
-            // Add the new route as the current one
             const updatedRoutes = [...prev.routes];
-            updatedRoutes[currentPathIndex] = alternativeRoute;
+            updatedRoutes.push(alternativeRoute);
+            setCurrentPathIndex(updatedRoutes.length - 1);
             
             return {
               ...prev,
@@ -380,7 +409,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         setIsRerouting(false);
         resetObstacleDetected();
         
-        // Resume animation after a short delay
         setTimeout(() => {
           setIsMoving(true);
         }, 500);
@@ -390,11 +418,9 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     handleObstacle();
   }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected, lastObstacleTime, isRerouting]);
   
-  // Helper function to get a point along a path based on progress
   const getPointAlongPath = (path: L.LatLngExpression[], progress: number) => {
     if (path.length <= 1) return path[0];
     
-    // Get the total path length
     let totalLength = 0;
     const segmentLengths: number[] = [];
     
@@ -406,7 +432,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       totalLength += length;
     }
     
-    // Find the point based on progress
     const targetDistance = progress * totalLength;
     let distanceSoFar = 0;
     
@@ -414,12 +439,10 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       const segmentLength = segmentLengths[i];
       
       if (distanceSoFar + segmentLength >= targetDistance) {
-        // We found the segment
         const segmentProgress = (targetDistance - distanceSoFar) / segmentLength;
         const p1 = L.latLng(path[i]);
         const p2 = L.latLng(path[i + 1]);
         
-        // Linear interpolation
         return L.latLng(
           p1.lat + (p2.lat - p1.lat) * segmentProgress,
           p1.lng + (p2.lng - p1.lng) * segmentProgress
@@ -429,7 +452,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       distanceSoFar += segmentLength;
     }
     
-    // If we get here, return the last point
     return path[path.length - 1];
   };
   
@@ -463,6 +485,12 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse mr-2"></div>
           <span>Current Position</span>
         </div>
+        {routeData && routeData.routes.find(r => r.transportMode === 'flight') && (
+          <div className="flex items-center mt-1">
+            <div className="w-3 h-3 border border-purple-500 mr-2 bg-transparent"></div>
+            <span className="text-purple-600">Flight Route</span>
+          </div>
+        )}
       </div>
       
       {routeData && (
@@ -474,11 +502,50 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
             </svg>
             <span>{Math.round(routeData.routes[currentPathIndex].duration / 60)} minutes</span>
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center mb-1">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
             <span>{(routeData.routes[currentPathIndex].distance / 1000).toFixed(1)} km</span>
+          </div>
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            <span>
+              {routeData.routes[currentPathIndex].transportMode === 'flight' 
+                ? 'Flight Route' 
+                : 'Driving Route'}
+            </span>
+          </div>
+        </div>
+      )}
+      
+      {routeData && routeData.routes.length > 1 && (
+        <div className="absolute top-4 right-4 bg-white/80 rounded-lg p-3 text-xs shadow-sm">
+          <div className="text-gray-700 font-medium mb-2">Available Routes</div>
+          <div className="space-y-1">
+            {routeData.routes.map((route, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentPathIndex(index)}
+                className={`flex items-center w-full text-left px-2 py-1 rounded ${
+                  currentPathIndex === index 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'hover:bg-gray-100'
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  route.transportMode === 'flight' 
+                    ? 'bg-purple-500' 
+                    : 'bg-blue-500'
+                }`}></div>
+                <span>
+                  {route.transportMode === 'flight' ? 'Flight' : `Route ${index + 1}`}
+                  {' '}({Math.round(route.duration / 60)} min)
+                </span>
+              </button>
+            ))}
           </div>
         </div>
       )}
