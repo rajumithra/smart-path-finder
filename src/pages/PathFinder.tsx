@@ -24,6 +24,7 @@ const PathFinder = () => {
     duration: 0,
     coordinates: null
   });
+  const [obstacleCount, setObstacleCount] = useState(0);
   
   // Get location data from session storage
   useEffect(() => {
@@ -49,6 +50,7 @@ const PathFinder = () => {
     if (!obstacleDetected && !isPathComplete) {
       setObstacleDetected(true);
       setShowAlert(true);
+      setObstacleCount(prev => prev + 1);
     }
   };
   
@@ -142,7 +144,7 @@ const PathFinder = () => {
 
         {/* Current travel information */}
         <div className="mb-6 p-4 glass-card rounded-lg">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="flex flex-col items-center">
               <div className="text-sm font-medium text-gray-500">Transport Mode</div>
               <div className="text-xl font-bold flex items-center">
@@ -170,6 +172,10 @@ const PathFinder = () => {
             <div className="flex flex-col items-center">
               <div className="text-sm font-medium text-gray-500">Estimated Time</div>
               <div className="text-xl font-bold">{formatDuration(routeInfo.duration)}</div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-sm font-medium text-gray-500">Obstacles Avoided</div>
+              <div className="text-xl font-bold">{obstacleCount}</div>
             </div>
           </div>
           
@@ -282,6 +288,7 @@ const PathFinder = () => {
               </div>
               <h2 className="text-xl font-medium mb-2">Destination Reached</h2>
               <p className="text-gray-600">You have successfully arrived at your destination.</p>
+              <p className="text-sm text-gray-500 mt-2">Obstacles avoided: {obstacleCount}</p>
               <button
                 onClick={handleBack}
                 className="btn-primary mt-4"

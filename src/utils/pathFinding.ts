@@ -1,4 +1,3 @@
-
 // Integration with OSRM API for path finding and routing
 
 import L from 'leaflet';
@@ -302,8 +301,14 @@ export const findAlternativeRoute = async (
   destinationLocation: Coordinates
 ): Promise<Route> => {
   try {
-    // Try to find an alternative route using OSRM
-    // Note: We're starting from the CURRENT POSITION now, not the original source
+    console.log(`Finding alternative route from position (${currentPosition.latitude}, ${currentPosition.longitude}) to destination (${destinationLocation.latitude}, ${destinationLocation.longitude})`);
+    
+    // If current route is flight, generate a new flight route
+    if (currentRoute.transportMode === 'flight') {
+      return generateFlightRoute(currentPosition, destinationLocation);
+    }
+    
+    // Try to find an alternative driving route using OSRM
     const url = `https://router.project-osrm.org/route/v1/driving/${currentPosition.longitude},${currentPosition.latitude};${destinationLocation.longitude},${destinationLocation.latitude}?overview=full&geometries=polyline&steps=true&alternatives=true`;
     
     console.log("Fetching alternative route from OSRM:", url);
@@ -525,16 +530,16 @@ function generateRandomWaypoints(
     
     // Linear interpolation between start and end
     const lat = start.latitude + (end.latitude - start.latitude) * position;
-    const lng = start.longitude + (end.longitude - start.longitude) * position;
+    const lon = start.longitude + (end.longitude - start.longitude) * position;
     
     // Add some randomness to avoid straight lines
     const randomFactor = 0.005; // About 500m at equator
     const randLat = (Math.random() - 0.5) * randomFactor;
-    const randLng = (Math.random() - 0.5) * randomFactor;
+    const randLon = (Math.random() - 0.5) * randomFactor;
     
     waypoints.push({
       latitude: lat + randLat,
-      longitude: lng + randLng
+      longitude: lon + randLon
     });
   }
   

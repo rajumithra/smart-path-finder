@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import L from 'leaflet';
@@ -44,7 +43,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const destMarkerRef = useRef<L.Marker | null>(null);
   const routingControlRef = useRef<any>(null);
   
-  // Update route info for parent component
   useEffect(() => {
     if (routeData && routeData.routes.length > 0 && currentPathIndex < routeData.routes.length && currentPosition) {
       const currentRoute = routeData.routes[currentPathIndex];
@@ -60,15 +58,12 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     }
   }, [routeData, currentPathIndex, currentPosition, onRouteInfoUpdate]);
   
-  // Effect for preferred mode selection
   useEffect(() => {
     if (routeData && routeData.routes.length > 0) {
-      // Find the index of the route with the requested transport mode
       const preferredRouteIndex = routeData.routes.findIndex(
         route => route.transportMode === preferredMode
       );
       
-      // If found, set it as current
       if (preferredRouteIndex >= 0) {
         setCurrentPathIndex(preferredRouteIndex);
       }
@@ -91,7 +86,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           ];
           setCurrentPosition(startPoint);
           
-          // Find the preferred route type (flight or driving)
           const preferredRouteIndex = pathData.routes.findIndex(
             route => route.transportMode === preferredMode
           );
@@ -319,6 +313,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
       try {
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current);
+          animationRef.current = null;
         }
         
         const currentRoute = routeData.routes[currentPathIndex];
@@ -326,155 +321,42 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           ? { latitude: currentPosition.lat, longitude: currentPosition.lng } 
           : { latitude: currentPosition[0], longitude: currentPosition[1] };
         
-        // Different handling based on current transport mode
+        toast({
+          title: "Obstacle Detected",
+          description: `Calculating new route from current position (${currentCoordinates.latitude.toFixed(4)}, ${currentCoordinates.longitude.toFixed(4)})`,
+        });
+        
         if (currentRoute.transportMode === 'flight') {
-          // For flight paths, find or create a driving route from current position
-          const drivingRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'driving');
+          const alternativeRoute = await findAlternativeRoute(
+            currentRoute,
+            currentCoordinates,
+            routeData.destinationLocation
+          );
           
-          if (drivingRouteIndex >= 0) {
-            // If we have a driving route, check if we should switch to it or recalculate
-            // Calculate distance from current point to start of driving route
-            const drivingRoute = routeData.routes[drivingRouteIndex];
-            const drivingStart = L.latLng(
-              drivingRoute.geometry[0][0],
-              drivingRoute.geometry[0][1]
-            );
-            const currentLatLng = L.latLng(
-              currentCoordinates.latitude,
-              currentCoordinates.longitude
-            );
-            const distanceToDriverStart = currentLatLng.distanceTo(drivingStart);
+          setRouteData(prev => {
+            if (!prev) return null;
             
-            if (distanceToDriverStart < 5000) { // Within 5km, just switch routes
-              setCurrentPathIndex(drivingRouteIndex);
-              toast({
-                title: "Obstacle Detected",
-                description: "Switching from flight to ground transportation",
-              });
-            } else {
-              // Too far, calculate new ground route from current position
-              toast({
-                title: "Obstacle Detected",
-                description: "Calculating new ground route from current position...",
-              });
-              
-              const alternativeRoute = await findAlternativeRoute(
-                currentRoute,
-                currentCoordinates,
-                routeData.destinationLocation
-              );
-              
-              setRouteData(prev => {
-                if (!prev) return null;
-                
-                const updatedRoutes = [...prev.routes];
-                updatedRoutes.push(alternativeRoute);
-                setCurrentPathIndex(updatedRoutes.length - 1);
-                
-                return {
-                  ...prev,
-                  routes: updatedRoutes
-                };
-              });
-            }
-          } else {
-            // No existing driving route, calculate new one from current position
-            toast({
-              title: "Obstacle Detected",
-              description: "Calculating new ground route from current position...",
-            });
+            const updatedRoutes = [...prev.routes];
+            updatedRoutes.push(alternativeRoute);
             
-            const alternativeRoute = await findAlternativeRoute(
-              currentRoute,
-              currentCoordinates,
-              routeData.destinationLocation
-            );
-            
-            setRouteData(prev => {
-              if (!prev) return null;
-              
-              const updatedRoutes = [...prev.routes];
-              updatedRoutes.push(alternativeRoute);
-              setCurrentPathIndex(updatedRoutes.length - 1);
-              
-              return {
-                ...prev,
-                routes: updatedRoutes
-              };
-            });
-          }
+            return {
+              ...prev,
+              routes: updatedRoutes
+            };
+          });
+          
+          setCurrentPathIndex(routeData.routes.length);
+          
         } else {
-          // For driving routes, either switch transport mode or find alternative driving route
           const flightRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'flight');
           
-          if (flightRouteIndex >= 0 && currentPathIndex !== flightRouteIndex) {
-            // Check if there's a remaining flight path segment that would be helpful
-            const flightRoute = routeData.routes[flightRouteIndex];
-            
-            // Find the closest point on flight path to current position
-            const closestPointIndex = findClosestPointIndex(
-              flightRoute.geometry,
-              currentCoordinates
-            );
-            
-            if (closestPointIndex > 0 && closestPointIndex < flightRoute.geometry.length - 1) {
-              // Create a new flight route using the remaining portion
-              const remainingFlightGeometry = flightRoute.geometry.slice(closestPointIndex);
-              
-              // Calculate new distance and duration
-              const remainingDistance = calculateRemainingDistance(remainingFlightGeometry);
-              const remainingDuration = remainingDistance / 222; // 222 m/s flight speed
-              
-              // Create new flight route with remaining segments
-              const newFlightRoute: Route = {
-                distance: remainingDistance,
-                duration: remainingDuration,
-                segments: [{
-                  distance: remainingDistance,
-                  duration: remainingDuration,
-                  startLocation: currentCoordinates,
-                  endLocation: routeData.destinationLocation,
-                  instructions: "Continue flight to destination",
-                  geometry: remainingFlightGeometry,
-                  transportMode: 'flight'
-                }],
-                geometry: remainingFlightGeometry,
-                transportMode: 'flight'
-              };
-              
-              // Add this route and switch to it
-              setRouteData(prev => {
-                if (!prev) return null;
-                
-                const updatedRoutes = [...prev.routes];
-                updatedRoutes.push(newFlightRoute);
-                
-                return {
-                  ...prev,
-                  routes: updatedRoutes
-                };
-              });
-              
-              setCurrentPathIndex(routeData.routes.length);
-              toast({
-                title: "Obstacle Detected",
-                description: "Switching to flight route to avoid obstacle",
-              });
-            } else {
-              // Just switch to the existing flight route
-              setCurrentPathIndex(flightRouteIndex);
-              toast({
-                title: "Obstacle Detected",
-                description: "Switching to flight route to avoid obstacle",
-              });
-            }
-          } else {
-            // Calculate a new route from current position
+          if (flightRouteIndex >= 0 && Math.random() > 0.5) {
+            setCurrentPathIndex(flightRouteIndex);
             toast({
-              title: "Obstacle Detected",
-              description: "Calculating new route from current position...",
+              title: "Route Changed",
+              description: "Switching to flight mode to avoid obstacle"
             });
-            
+          } else {
             const alternativeRoute = await findAlternativeRoute(
               currentRoute,
               currentCoordinates,
@@ -486,12 +368,18 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
               
               const updatedRoutes = [...prev.routes];
               updatedRoutes.push(alternativeRoute);
-              setCurrentPathIndex(updatedRoutes.length - 1);
               
               return {
                 ...prev,
                 routes: updatedRoutes
               };
+            });
+            
+            setCurrentPathIndex(routeData.routes.length);
+            
+            toast({
+              title: "Route Changed",
+              description: "Recalculated driving route from current position"
             });
           }
         }
@@ -509,14 +397,49 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         
         setTimeout(() => {
           setIsMoving(true);
-        }, 500);
+          setPathProgress(0);
+          
+          if (!animationRef.current) {
+            animationRef.current = requestAnimationFrame((timestamp) => {
+              let startTime = timestamp;
+              const animate = (timestamp: number) => {
+                const elapsed = timestamp - startTime;
+                const duration = 15000;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                setPathProgress(progress);
+                
+                if (routeData && routeData.routes.length > currentPathIndex) {
+                  const currentRoute = routeData.routes[currentPathIndex];
+                  const routePath = currentRoute.geometry;
+                  
+                  if (routePath.length > 1 && markerRef.current && mapRef.current) {
+                    const currentPos = getPointAlongPath(routePath, progress);
+                    
+                    markerRef.current.setLatLng(currentPos);
+                    setCurrentPosition(currentPos);
+                    
+                    mapRef.current.panTo(currentPos);
+                  }
+                }
+                
+                if (progress < 1) {
+                  animationRef.current = requestAnimationFrame(animate);
+                } else {
+                  onPathComplete();
+                }
+              };
+              
+              animationRef.current = requestAnimationFrame(animate);
+            });
+          }
+        }, 1000);
       }
     };
     
     handleObstacle();
-  }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected, lastObstacleTime, isRerouting]);
+  }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected, lastObstacleTime, isRerouting, onPathComplete]);
   
-  // Calculate the total remaining distance of a route from a given point
   const calculateRemainingDistance = (geometry: L.LatLngExpression[]): number => {
     let totalDistance = 0;
     for (let i = 0; i < geometry.length - 1; i++) {
@@ -527,7 +450,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     return totalDistance;
   };
   
-  // Find the index of the point on a route closest to a given position
   const findClosestPointIndex = (
     geometry: L.LatLngExpression[], 
     position: { latitude: number, longitude: number }
@@ -699,7 +621,6 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         </div>
       )}
       
-      {/* Progress indicator */}
       <div className="absolute bottom-4 left-4 bg-white/80 rounded-lg p-3 shadow-sm" style={{ width: '180px' }}>
         <div className="flex justify-between items-center mb-1 text-xs">
           <span className="text-gray-600">Progress</span>
