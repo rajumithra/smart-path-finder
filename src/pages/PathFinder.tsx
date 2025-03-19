@@ -5,6 +5,9 @@ import { motion } from 'framer-motion';
 import CameraFeed from '../components/CameraFeed';
 import PathVisualization from '../components/PathVisualization';
 import ObstacleAlert from '../components/ObstacleAlert';
+import { ObstacleRecord } from '../utils/obstacleDetection';
+import { Button } from "@/components/ui/button";
+import { toast } from '@/components/ui/use-toast';
 
 const PathFinder = () => {
   const navigate = useNavigate();
@@ -13,6 +16,7 @@ const PathFinder = () => {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isPathComplete, setIsPathComplete] = useState(false);
   const [obstacleDetected, setObstacleDetected] = useState(false);
+  const [lastObstacleRecord, setLastObstacleRecord] = useState<ObstacleRecord | null>(null);
   const [showAlert, setShowAlert] = useState(false);
   const [transportMode, setTransportMode] = useState<'driving' | 'flight'>('driving');
   const [routeInfo, setRouteInfo] = useState<{
@@ -25,6 +29,7 @@ const PathFinder = () => {
     coordinates: null
   });
   const [obstacleCount, setObstacleCount] = useState(0);
+  const [viewObstacleHistory, setViewObstacleHistory] = useState(false);
   
   // Get location data from session storage
   useEffect(() => {
@@ -46,11 +51,21 @@ const PathFinder = () => {
     }, 1000);
   }, [navigate]);
   
-  const handleObstacleDetected = () => {
+  const handleObstacleDetected = (obstacleRecord?: ObstacleRecord) => {
     if (!obstacleDetected && !isPathComplete) {
       setObstacleDetected(true);
       setShowAlert(true);
       setObstacleCount(prev => prev + 1);
+      
+      if (obstacleRecord) {
+        setLastObstacleRecord(obstacleRecord);
+        
+        toast({
+          title: `${obstacleRecord.type} Detected`,
+          description: `A ${obstacleRecord.type} obstacle was detected and image saved`,
+          variant: "warning"
+        });
+      }
     }
   };
   
@@ -83,6 +98,10 @@ const PathFinder = () => {
     });
   };
   
+  const toggleObstacleHistory = () => {
+    setViewObstacleHistory(prev => !prev);
+  };
+  
   // Helper functions to format distance and duration
   const formatDistance = (meters: number): string => {
     return meters >= 1000 
@@ -102,7 +121,11 @@ const PathFinder = () => {
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-sky-100 p-4 sm:p-6">
-      <ObstacleAlert isVisible={showAlert} onClose={handleCloseAlert} />
+      <ObstacleAlert 
+        isVisible={showAlert} 
+        onClose={handleCloseAlert} 
+        obstacleRecord={lastObstacleRecord}
+      />
       
       <motion.div
         className="max-w-6xl mx-auto"
@@ -134,7 +157,15 @@ const PathFinder = () => {
             </h1>
           </div>
           
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={toggleObstacleHistory}
+              className="text-xs"
+            >
+              {viewObstacleHistory ? 'Hide' : 'View'} Obstacle History
+            </Button>
             <div className={`h-2 w-2 rounded-full mr-2 ${isCameraActive ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
             <span className="text-sm text-gray-600">
               {isCameraActive ? 'Monitoring' : 'Standby'}
@@ -184,6 +215,19 @@ const PathFinder = () => {
               <div className="text-sm font-medium text-gray-500">Current Position</div>
               <div className="text-sm">
                 {routeInfo.coordinates.lat.toFixed(6)}, {routeInfo.coordinates.lng.toFixed(6)}
+              </div>
+            </div>
+          )}
+          
+          {lastObstacleRecord && (
+            <div className="mt-3 p-2 bg-amber-50 rounded-lg border border-amber-200">
+              <div className="text-sm font-medium text-amber-700">Last Obstacle Detected</div>
+              <div className="flex items-center mt-1 text-sm text-amber-600">
+                <div className="mr-2">Type: {lastObstacleRecord.type}</div>
+                <div className="mr-2">•</div>
+                <div className="mr-2">Confidence: {(lastObstacleRecord.confidence * 100).toFixed(0)}%</div>
+                <div className="mr-2">•</div>
+                <div>Time: {new Date(lastObstacleRecord.timestamp).toLocaleTimeString()}</div>
               </div>
             </div>
           )}
@@ -268,6 +312,10 @@ const PathFinder = () => {
               <CameraFeed
                 onObstacleDetected={handleObstacleDetected}
                 isActive={isCameraActive}
+                currentLocation={routeInfo.coordinates ? 
+                  { latitude: routeInfo.coordinates.lat, longitude: routeInfo.coordinates.lng } : 
+                  null
+                }
               />
             </div>
           </motion.div>
@@ -299,10 +347,89 @@ const PathFinder = () => {
           </motion.div>
         )}
         
+        {/* Obstacle History Modal */}
+        {viewObstacleHistory && (
+          <motion.div
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <motion.div
+              className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-auto"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="font-medium">Obstacle History</h3>
+                <button onClick={toggleObstacleHistory} className="text-gray-500 hover:text-gray-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <ObstacleHistoryList />
+            </motion.div>
+          </motion.div>
+        )}
+        
         <div className="mt-8 text-center text-xs text-gray-500">
           Smart Path Finder &copy; {new Date().getFullYear()} • Real-time Navigation with Obstacle Detection
         </div>
       </motion.div>
+    </div>
+  );
+};
+
+// Component to display the obstacle history
+const ObstacleHistoryList = () => {
+  const [obstacles, setObstacles] = useState<ObstacleRecord[]>([]);
+  
+  useEffect(() => {
+    try {
+      const historyJSON = localStorage.getItem('obstacle-history');
+      setObstacles(historyJSON ? JSON.parse(historyJSON) : []);
+    } catch (error) {
+      console.error('Failed to load obstacle history:', error);
+    }
+  }, []);
+  
+  if (obstacles.length === 0) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        No obstacle history available yet.
+      </div>
+    );
+  }
+  
+  return (
+    <div className="p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {obstacles.map(obstacle => (
+          <div key={obstacle.id} className="border rounded-lg overflow-hidden">
+            <div className="aspect-w-16 aspect-h-9 bg-gray-100">
+              <img 
+                src={obstacle.imageDataUrl} 
+                alt={`Obstacle ${obstacle.type}`} 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="p-3">
+              <div className="flex justify-between">
+                <span className="font-medium capitalize">{obstacle.type}</span>
+                <span className="text-sm text-gray-500">
+                  {new Date(obstacle.timestamp).toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                <div>Confidence: {(obstacle.confidence * 100).toFixed(0)}%</div>
+                <div className="mt-1">
+                  Location: {obstacle.location.latitude.toFixed(6)}, {obstacle.location.longitude.toFixed(6)}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

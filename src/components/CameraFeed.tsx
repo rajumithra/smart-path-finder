@@ -1,19 +1,35 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { detectObstacle, analyzeSceneComplexity } from '../utils/obstacleDetection';
+import { 
+  detectObstacle, 
+  analyzeSceneComplexity, 
+  saveObstacleImage,
+  ObstacleRecord,
+  getObstacleHistory,
+  checkForSimilarObstacles
+} from '../utils/obstacleDetection';
+import { Button } from "@/components/ui/button";
+import { toast } from '@/components/ui/use-toast';
 
 interface CameraFeedProps {
-  onObstacleDetected: () => void;
+  onObstacleDetected: (obstacleRecord?: ObstacleRecord) => void;
   isActive: boolean;
+  currentLocation?: { latitude: number; longitude: number } | null;
 }
 
-const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive }) => {
+const CameraFeed: React.FC<CameraFeedProps> = ({ 
+  onObstacleDetected, 
+  isActive,
+  currentLocation 
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sceneComplexity, setSceneComplexity] = useState(0);
+  const [lastObstacleImage, setLastObstacleImage] = useState<string | null>(null);
+  const [recentObstacles, setRecentObstacles] = useState<ObstacleRecord[]>([]);
   
   // Request camera access and set up video stream
   useEffect(() => {
@@ -64,6 +80,22 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive })
     };
   }, [isActive]);
   
+  // Check for nearby obstacles when location changes
+  useEffect(() => {
+    if (currentLocation) {
+      const nearbyObstacles = checkForSimilarObstacles(currentLocation, 500);
+      setRecentObstacles(nearbyObstacles.slice(0, 3));
+      
+      if (nearbyObstacles.length > 0) {
+        toast({
+          title: `${nearbyObstacles.length} similar obstacles nearby`,
+          description: "Be cautious! Similar obstacles have been detected in this area before.",
+          variant: "warning"
+        });
+      }
+    }
+  }, [currentLocation]);
+  
   // Set up obstacle detection processing loop
   useEffect(() => {
     if (!isActive || !videoRef.current || !canvasRef.current) return;
@@ -101,8 +133,22 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive })
         // Detect obstacles
         const hasObstacle = await detectObstacle(canvas);
         
-        if (hasObstacle) {
-          onObstacleDetected();
+        if (hasObstacle && currentLocation) {
+          // Save the obstacle image and get the record
+          const obstacleRecord = await saveObstacleImage(canvas, currentLocation);
+          
+          if (obstacleRecord) {
+            setLastObstacleImage(obstacleRecord.imageDataUrl);
+            onObstacleDetected(obstacleRecord);
+            
+            toast({
+              title: `${obstacleRecord.type} obstacle detected`,
+              description: `Saved at ${new Date(obstacleRecord.timestamp).toLocaleTimeString()}`,
+              variant: "warning"
+            });
+          } else {
+            onObstacleDetected();
+          }
         }
         
         setIsProcessing(false);
@@ -141,6 +187,13 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive })
         ctx.stroke();
       });
       
+      // Draw previous obstacles at current location if any
+      if (recentObstacles.length > 0) {
+        ctx.font = '14px Arial';
+        ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
+        ctx.fillText(`⚠️ ${recentObstacles.length} similar obstacles detected nearby`, 10, 30);
+      }
+      
       animationFrameId = requestAnimationFrame(processFrame);
     };
     
@@ -150,7 +203,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive })
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isActive, isProcessing, onObstacleDetected]);
+  }, [isActive, isProcessing, onObstacleDetected, currentLocation, recentObstacles]);
   
   return (
     <motion.div
@@ -213,6 +266,18 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onObstacleDetected, isActive })
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           Processing
+        </div>
+      )}
+      
+      {/* Last obstacle image thumbnail */}
+      {lastObstacleImage && (
+        <div className="absolute bottom-10 left-2 bg-black/60 rounded-md p-1 backdrop-blur-sm">
+          <div className="text-xs text-white mb-1">Last Obstacle</div>
+          <img 
+            src={lastObstacleImage} 
+            alt="Last obstacle" 
+            className="w-20 h-20 object-cover rounded"
+          />
         </div>
       )}
       

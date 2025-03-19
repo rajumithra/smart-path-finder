@@ -1,18 +1,25 @@
 
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ObstacleRecord } from '../utils/obstacleDetection';
 
 interface ObstacleAlertProps {
   isVisible: boolean;
   onClose: () => void;
+  obstacleRecord?: ObstacleRecord | null;
 }
 
-const ObstacleAlert: React.FC<ObstacleAlertProps> = ({ isVisible, onClose }) => {
+const ObstacleAlert: React.FC<ObstacleAlertProps> = ({ 
+  isVisible, 
+  onClose,
+  obstacleRecord
+}) => {
+  // Auto-close after 5 seconds
   useEffect(() => {
     if (isVisible) {
       const timer = setTimeout(() => {
         onClose();
-      }, 5000); // Auto-close after 5 seconds
+      }, 5000);
       
       return () => clearTimeout(timer);
     }
@@ -22,68 +29,63 @@ const ObstacleAlert: React.FC<ObstacleAlertProps> = ({ isVisible, onClose }) => 
     <AnimatePresence>
       {isVisible && (
         <motion.div
-          className="fixed inset-x-0 top-4 mx-auto max-w-sm z-50"
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -50 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+          className="fixed top-0 left-0 right-0 z-50 flex justify-center"
+          initial={{ y: -100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -100, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
-          <div className="glass-card border border-red-200 shadow-lg backdrop-blur-lg rounded-lg overflow-hidden bg-white/90">
-            <div className="bg-red-50 px-4 py-2 border-b border-red-100 flex items-center">
-              <div className="bg-red-100 p-1.5 rounded-full mr-2">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 mt-4 mx-4 rounded-lg shadow-lg max-w-xl">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h3 className="font-medium text-red-800 text-sm">Obstacle Detected</h3>
-              <button 
-                onClick={onClose}
-                className="ml-auto text-red-400 hover:text-red-500"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="p-4">
-              <p className="text-gray-700 text-sm">
-                An obstacle has been detected on your current path. Rerouting to find a safer alternative route.
-              </p>
-              
-              <div className="flex flex-col space-y-2 mt-3">
-                <div className="flex items-center text-xs text-amber-600 bg-amber-50 p-1.5 rounded">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Calculating the nearest alternative path to reach your destination</span>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">
+                  Obstacle Detected!
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>
+                    {obstacleRecord ? 
+                      `A ${obstacleRecord.type} has been detected on your path. Recalculating route from current position.` :
+                      'An obstacle has been detected on your path. Recalculating route from current position.'
+                    }
+                  </p>
+                  
+                  {obstacleRecord && (
+                    <div className="mt-2 flex items-center">
+                      <div className="mr-2 w-16 h-16 rounded overflow-hidden bg-red-100">
+                        <img 
+                          src={obstacleRecord.imageDataUrl} 
+                          alt="Obstacle" 
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="text-xs">
+                        <div>Type: <span className="font-medium">{obstacleRecord.type}</span></div>
+                        <div>Confidence: <span className="font-medium">{(obstacleRecord.confidence * 100).toFixed(0)}%</span></div>
+                        <div>Location: <span className="font-medium">{obstacleRecord.location.latitude.toFixed(4)}, {obstacleRecord.location.longitude.toFixed(4)}</span></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              
-              <div className="flex items-center justify-between mt-3">
-                <div className="flex items-center text-xs text-gray-500">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Auto-closing in a few seconds
+              <div className="ml-auto pl-3">
+                <div className="-mx-1.5 -my-1.5">
+                  <button
+                    onClick={onClose}
+                    className="inline-flex rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    <span className="sr-only">Dismiss</span>
+                    <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
                 </div>
-                
-                <button 
-                  onClick={onClose}
-                  className="text-xs font-medium px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-full transition-colors"
-                >
-                  Dismiss
-                </button>
               </div>
             </div>
-            
-            {/* Progress bar for auto-close countdown */}
-            <motion.div 
-              className="h-0.5 bg-red-500"
-              initial={{ width: "100%" }}
-              animate={{ width: "0%" }}
-              transition={{ duration: 5, ease: "linear" }}
-            />
           </div>
         </motion.div>
       )}
