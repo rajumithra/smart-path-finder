@@ -15,6 +15,15 @@ const PathFinder = () => {
   const [obstacleDetected, setObstacleDetected] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [transportMode, setTransportMode] = useState<'driving' | 'flight'>('driving');
+  const [routeInfo, setRouteInfo] = useState<{
+    distance: number; // meters
+    duration: number; // seconds
+    coordinates: { lat: number, lng: number } | null;
+  }>({
+    distance: 0,
+    duration: 0,
+    coordinates: null
+  });
   
   // Get location data from session storage
   useEffect(() => {
@@ -63,6 +72,31 @@ const PathFinder = () => {
   const handleTransportModeChange = (mode: 'driving' | 'flight') => {
     setTransportMode(mode);
   };
+
+  const handleRouteInfoUpdate = (distance: number, duration: number, currentCoordinates: { lat: number, lng: number } | null) => {
+    setRouteInfo({
+      distance,
+      duration,
+      coordinates: currentCoordinates
+    });
+  };
+  
+  // Helper functions to format distance and duration
+  const formatDistance = (meters: number): string => {
+    return meters >= 1000 
+      ? `${(meters / 1000).toFixed(1)} km` 
+      : `${Math.round(meters)} m`;
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours} hr ${minutes} min`;
+    }
+    return `${minutes} min`;
+  };
   
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-sky-100 p-4 sm:p-6">
@@ -104,6 +138,49 @@ const PathFinder = () => {
               {isCameraActive ? 'Monitoring' : 'Standby'}
             </span>
           </div>
+        </div>
+
+        {/* Current travel information */}
+        <div className="mb-6 p-4 glass-card rounded-lg">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col items-center">
+              <div className="text-sm font-medium text-gray-500">Transport Mode</div>
+              <div className="text-xl font-bold flex items-center">
+                {transportMode === 'driving' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    </svg>
+                    Ground
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    Flight
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-sm font-medium text-gray-500">Distance</div>
+              <div className="text-xl font-bold">{formatDistance(routeInfo.distance)}</div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-sm font-medium text-gray-500">Estimated Time</div>
+              <div className="text-xl font-bold">{formatDuration(routeInfo.duration)}</div>
+            </div>
+          </div>
+          
+          {routeInfo.coordinates && (
+            <div className="mt-3 text-center">
+              <div className="text-sm font-medium text-gray-500">Current Position</div>
+              <div className="text-sm">
+                {routeInfo.coordinates.lat.toFixed(6)}, {routeInfo.coordinates.lng.toFixed(6)}
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -162,6 +239,8 @@ const PathFinder = () => {
                 onPathComplete={handlePathComplete}
                 obstacleDetected={obstacleDetected}
                 resetObstacleDetected={resetObstacleDetected}
+                preferredMode={transportMode}
+                onRouteInfoUpdate={handleRouteInfoUpdate}
               />
             </div>
           </motion.div>

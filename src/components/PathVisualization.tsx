@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import L from 'leaflet';
@@ -11,6 +12,8 @@ interface PathVisualizationProps {
   onPathComplete: () => void;
   obstacleDetected: boolean;
   resetObstacleDetected: () => void;
+  preferredMode?: 'driving' | 'flight';
+  onRouteInfoUpdate?: (distance: number, duration: number, currentCoordinates: { lat: number, lng: number } | null) => void;
 }
 
 const PathVisualization: React.FC<PathVisualizationProps> = ({
@@ -18,7 +21,9 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   destination,
   onPathComplete,
   obstacleDetected,
-  resetObstacleDetected
+  resetObstacleDetected,
+  preferredMode = 'driving',
+  onRouteInfoUpdate
 }) => {
   const [isCalculating, setIsCalculating] = useState(false);
   const [currentPathIndex, setCurrentPathIndex] = useState(0);
@@ -39,6 +44,37 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
   const destMarkerRef = useRef<L.Marker | null>(null);
   const routingControlRef = useRef<any>(null);
   
+  // Update route info for parent component
+  useEffect(() => {
+    if (routeData && routeData.routes.length > 0 && currentPathIndex < routeData.routes.length && currentPosition) {
+      const currentRoute = routeData.routes[currentPathIndex];
+      const latLng = currentPosition instanceof L.LatLng 
+        ? currentPosition 
+        : L.latLng(currentPosition[0], currentPosition[1]);
+        
+      onRouteInfoUpdate?.(
+        currentRoute.distance,
+        currentRoute.duration,
+        { lat: latLng.lat, lng: latLng.lng }
+      );
+    }
+  }, [routeData, currentPathIndex, currentPosition, onRouteInfoUpdate]);
+  
+  // Effect for preferred mode selection
+  useEffect(() => {
+    if (routeData && routeData.routes.length > 0) {
+      // Find the index of the route with the requested transport mode
+      const preferredRouteIndex = routeData.routes.findIndex(
+        route => route.transportMode === preferredMode
+      );
+      
+      // If found, set it as current
+      if (preferredRouteIndex >= 0) {
+        setCurrentPathIndex(preferredRouteIndex);
+      }
+    }
+  }, [preferredMode, routeData]);
+  
   useEffect(() => {
     if (!source || !destination) return;
     
@@ -54,6 +90,15 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
             pathData.sourceLocation.longitude
           ];
           setCurrentPosition(startPoint);
+          
+          // Find the preferred route type (flight or driving)
+          const preferredRouteIndex = pathData.routes.findIndex(
+            route => route.transportMode === preferredMode
+          );
+          
+          if (preferredRouteIndex >= 0) {
+            setCurrentPathIndex(preferredRouteIndex);
+          }
         }
       } catch (error) {
         console.error("Error loading path data:", error);
@@ -71,7 +116,7 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     };
     
     loadPathData();
-  }, [source, destination]);
+  }, [source, destination, preferredMode]);
   
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -277,74 +322,40 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
         }
         
         const currentRoute = routeData.routes[currentPathIndex];
+        const currentCoordinates = currentPosition instanceof L.LatLng 
+          ? { latitude: currentPosition.lat, longitude: currentPosition.lng } 
+          : { latitude: currentPosition[0], longitude: currentPosition[1] };
         
+        // Different handling based on current transport mode
         if (currentRoute.transportMode === 'flight') {
+          // For flight paths, find or create a driving route from current position
           const drivingRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'driving');
-          if (drivingRouteIndex >= 0) {
-            setCurrentPathIndex(drivingRouteIndex);
-            toast({
-              title: "Obstacle Detected",
-              description: "Switching from flight to ground transportation",
-            });
-          } else {
-            const currentCoordinates = {
-              latitude: (currentPosition as L.LatLng).lat,
-              longitude: (currentPosition as L.LatLng).lng
-            };
-            
-            toast({
-              title: "Obstacle Detected",
-              description: "Calculating new ground route...",
-            });
-            
-            const alternativeRoute = await findAlternativeRoute(
-              currentRoute,
-              currentCoordinates,
-              routeData.destinationLocation
-            );
-            
-            setRouteData(prev => {
-              if (!prev) return null;
-              
-              const updatedRoutes = [...prev.routes];
-              updatedRoutes.push(alternativeRoute);
-              setCurrentPathIndex(updatedRoutes.length - 1);
-              
-              return {
-                ...prev,
-                routes: updatedRoutes
-              };
-            });
-          }
-        } else if (routeData.routes.length > 1) {
-          const flightRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'flight');
           
-          if (flightRouteIndex >= 0 && currentPathIndex !== flightRouteIndex) {
-            setCurrentPathIndex(flightRouteIndex);
-            toast({
-              title: "Obstacle Detected",
-              description: "Switching to flight route to avoid obstacle",
-            });
-          } else {
-            const nextDrivingRouteIndex = routeData.routes.findIndex((r, i) => 
-              i !== currentPathIndex && r.transportMode === 'driving'
+          if (drivingRouteIndex >= 0) {
+            // If we have a driving route, check if we should switch to it or recalculate
+            // Calculate distance from current point to start of driving route
+            const drivingRoute = routeData.routes[drivingRouteIndex];
+            const drivingStart = L.latLng(
+              drivingRoute.geometry[0][0],
+              drivingRoute.geometry[0][1]
             );
+            const currentLatLng = L.latLng(
+              currentCoordinates.latitude,
+              currentCoordinates.longitude
+            );
+            const distanceToDriverStart = currentLatLng.distanceTo(drivingStart);
             
-            if (nextDrivingRouteIndex >= 0) {
-              setCurrentPathIndex(nextDrivingRouteIndex);
+            if (distanceToDriverStart < 5000) { // Within 5km, just switch routes
+              setCurrentPathIndex(drivingRouteIndex);
               toast({
                 title: "Obstacle Detected",
-                description: "Switching to alternative driving route",
+                description: "Switching from flight to ground transportation",
               });
             } else {
-              const currentCoordinates = {
-                latitude: (currentPosition as L.LatLng).lat,
-                longitude: (currentPosition as L.LatLng).lng
-              };
-              
+              // Too far, calculate new ground route from current position
               toast({
                 title: "Obstacle Detected",
-                description: "Calculating new route from current position...",
+                description: "Calculating new ground route from current position...",
               });
               
               const alternativeRoute = await findAlternativeRoute(
@@ -366,36 +377,123 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
                 };
               });
             }
+          } else {
+            // No existing driving route, calculate new one from current position
+            toast({
+              title: "Obstacle Detected",
+              description: "Calculating new ground route from current position...",
+            });
+            
+            const alternativeRoute = await findAlternativeRoute(
+              currentRoute,
+              currentCoordinates,
+              routeData.destinationLocation
+            );
+            
+            setRouteData(prev => {
+              if (!prev) return null;
+              
+              const updatedRoutes = [...prev.routes];
+              updatedRoutes.push(alternativeRoute);
+              setCurrentPathIndex(updatedRoutes.length - 1);
+              
+              return {
+                ...prev,
+                routes: updatedRoutes
+              };
+            });
           }
         } else {
-          const currentCoordinates = {
-            latitude: (currentPosition as L.LatLng).lat,
-            longitude: (currentPosition as L.LatLng).lng
-          };
+          // For driving routes, either switch transport mode or find alternative driving route
+          const flightRouteIndex = routeData.routes.findIndex(r => r.transportMode === 'flight');
           
-          toast({
-            title: "Obstacle Detected",
-            description: "Calculating new route from current position...",
-          });
-          
-          const alternativeRoute = await findAlternativeRoute(
-            currentRoute,
-            currentCoordinates,
-            routeData.destinationLocation
-          );
-          
-          setRouteData(prev => {
-            if (!prev) return null;
+          if (flightRouteIndex >= 0 && currentPathIndex !== flightRouteIndex) {
+            // Check if there's a remaining flight path segment that would be helpful
+            const flightRoute = routeData.routes[flightRouteIndex];
             
-            const updatedRoutes = [...prev.routes];
-            updatedRoutes.push(alternativeRoute);
-            setCurrentPathIndex(updatedRoutes.length - 1);
+            // Find the closest point on flight path to current position
+            const closestPointIndex = findClosestPointIndex(
+              flightRoute.geometry,
+              currentCoordinates
+            );
             
-            return {
-              ...prev,
-              routes: updatedRoutes
-            };
-          });
+            if (closestPointIndex > 0 && closestPointIndex < flightRoute.geometry.length - 1) {
+              // Create a new flight route using the remaining portion
+              const remainingFlightGeometry = flightRoute.geometry.slice(closestPointIndex);
+              
+              // Calculate new distance and duration
+              const remainingDistance = calculateRemainingDistance(remainingFlightGeometry);
+              const remainingDuration = remainingDistance / 222; // 222 m/s flight speed
+              
+              // Create new flight route with remaining segments
+              const newFlightRoute: Route = {
+                distance: remainingDistance,
+                duration: remainingDuration,
+                segments: [{
+                  distance: remainingDistance,
+                  duration: remainingDuration,
+                  startLocation: currentCoordinates,
+                  endLocation: routeData.destinationLocation,
+                  instructions: "Continue flight to destination",
+                  geometry: remainingFlightGeometry,
+                  transportMode: 'flight'
+                }],
+                geometry: remainingFlightGeometry,
+                transportMode: 'flight'
+              };
+              
+              // Add this route and switch to it
+              setRouteData(prev => {
+                if (!prev) return null;
+                
+                const updatedRoutes = [...prev.routes];
+                updatedRoutes.push(newFlightRoute);
+                
+                return {
+                  ...prev,
+                  routes: updatedRoutes
+                };
+              });
+              
+              setCurrentPathIndex(routeData.routes.length);
+              toast({
+                title: "Obstacle Detected",
+                description: "Switching to flight route to avoid obstacle",
+              });
+            } else {
+              // Just switch to the existing flight route
+              setCurrentPathIndex(flightRouteIndex);
+              toast({
+                title: "Obstacle Detected",
+                description: "Switching to flight route to avoid obstacle",
+              });
+            }
+          } else {
+            // Calculate a new route from current position
+            toast({
+              title: "Obstacle Detected",
+              description: "Calculating new route from current position...",
+            });
+            
+            const alternativeRoute = await findAlternativeRoute(
+              currentRoute,
+              currentCoordinates,
+              routeData.destinationLocation
+            );
+            
+            setRouteData(prev => {
+              if (!prev) return null;
+              
+              const updatedRoutes = [...prev.routes];
+              updatedRoutes.push(alternativeRoute);
+              setCurrentPathIndex(updatedRoutes.length - 1);
+              
+              return {
+                ...prev,
+                routes: updatedRoutes
+              };
+            });
+          }
         }
       } catch (error) {
         console.error("Error handling obstacle:", error);
@@ -417,6 +515,40 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
     
     handleObstacle();
   }, [obstacleDetected, routeData, currentPathIndex, currentPosition, resetObstacleDetected, lastObstacleTime, isRerouting]);
+  
+  // Calculate the total remaining distance of a route from a given point
+  const calculateRemainingDistance = (geometry: L.LatLngExpression[]): number => {
+    let totalDistance = 0;
+    for (let i = 0; i < geometry.length - 1; i++) {
+      const p1 = L.latLng(geometry[i]);
+      const p2 = L.latLng(geometry[i + 1]);
+      totalDistance += p1.distanceTo(p2);
+    }
+    return totalDistance;
+  };
+  
+  // Find the index of the point on a route closest to a given position
+  const findClosestPointIndex = (
+    geometry: L.LatLngExpression[], 
+    position: { latitude: number, longitude: number }
+  ): number => {
+    let minDistance = Infinity;
+    let closestIndex = 0;
+    
+    const posLatLng = L.latLng(position.latitude, position.longitude);
+    
+    geometry.forEach((point, index) => {
+      const routePoint = L.latLng(point[0], point[1]);
+      const distance = posLatLng.distanceTo(routePoint);
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = index;
+      }
+    });
+    
+    return closestIndex;
+  };
   
   const getPointAlongPath = (path: L.LatLngExpression[], progress: number) => {
     if (path.length <= 1) return path[0];
@@ -518,6 +650,23 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
                 : 'Driving Route'}
             </span>
           </div>
+          
+          {currentPosition && (
+            <div className="mt-2 border-t pt-2 border-gray-200">
+              <div className="text-gray-700 font-medium mb-1">Current Position</div>
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>
+                  {currentPosition instanceof L.LatLng 
+                    ? `${currentPosition.lat.toFixed(6)}, ${currentPosition.lng.toFixed(6)}`
+                    : `${currentPosition[0].toFixed(6)}, ${currentPosition[1].toFixed(6)}`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
       
@@ -549,6 +698,20 @@ const PathVisualization: React.FC<PathVisualizationProps> = ({
           </div>
         </div>
       )}
+      
+      {/* Progress indicator */}
+      <div className="absolute bottom-4 left-4 bg-white/80 rounded-lg p-3 shadow-sm" style={{ width: '180px' }}>
+        <div className="flex justify-between items-center mb-1 text-xs">
+          <span className="text-gray-600">Progress</span>
+          <span className="font-medium">{Math.round(pathProgress * 100)}%</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div 
+            className="bg-blue-600 h-2 rounded-full" 
+            style={{ width: `${pathProgress * 100}%` }}
+          ></div>
+        </div>
+      </div>
     </div>
   );
 };
