@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -31,13 +30,11 @@ const PathFinder = () => {
   const [obstacleCount, setObstacleCount] = useState(0);
   const [viewObstacleHistory, setViewObstacleHistory] = useState(false);
   
-  // Get location data from session storage
   useEffect(() => {
     const storedSource = sessionStorage.getItem('sourceLocation');
     const storedDestination = sessionStorage.getItem('destinationLocation');
     
     if (!storedSource || !storedDestination) {
-      // If no location data, redirect back to index
       navigate('/');
       return;
     }
@@ -45,7 +42,6 @@ const PathFinder = () => {
     setSource(storedSource);
     setDestination(storedDestination);
     
-    // Activate camera after a delay
     setTimeout(() => {
       setIsCameraActive(true);
     }, 1000);
@@ -102,7 +98,6 @@ const PathFinder = () => {
     setViewObstacleHistory(prev => !prev);
   };
   
-  // Helper functions to format distance and duration
   const formatDistance = (meters: number): string => {
     return meters >= 1000 
       ? `${(meters / 1000).toFixed(1)} km` 
@@ -173,7 +168,6 @@ const PathFinder = () => {
           </div>
         </div>
 
-        {/* Current travel information */}
         <div className="mb-6 p-4 glass-card rounded-lg">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="flex flex-col items-center">
@@ -282,7 +276,7 @@ const PathFinder = () => {
               </div>
             </div>
             
-            <div className="p-0 h-[calc(100%-57px)]"> {/* Adjust height to account for header */}
+            <div className="p-0 h-[calc(100%-57px)]">
               <PathVisualization
                 source={source}
                 destination={destination}
@@ -308,7 +302,7 @@ const PathFinder = () => {
               </div>
             </div>
             
-            <div className="h-[calc(100%-57px)]"> {/* Adjust height to account for header */}
+            <div className="h-[calc(100%-57px)]">
               <CameraFeed
                 onObstacleDetected={handleObstacleDetected}
                 isActive={isCameraActive}
@@ -347,7 +341,6 @@ const PathFinder = () => {
           </motion.div>
         )}
         
-        {/* Obstacle History Modal */}
         {viewObstacleHistory && (
           <motion.div
             className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
@@ -380,7 +373,6 @@ const PathFinder = () => {
   );
 };
 
-// Component to display the obstacle history
 const ObstacleHistoryList = () => {
   const [obstacles, setObstacles] = useState<ObstacleRecord[]>([]);
   
